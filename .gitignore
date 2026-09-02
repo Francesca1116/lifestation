@@ -1,0 +1,43 @@
+# ============ 隐私敏感：不提交 ============
+
+# 升格后的发布版（含真实 database_id，可被外部读写）
+src/生活站.ready.html
+/生活站.ready.html
+*.ready.html
+
+# 升格产物（page_node_id + 公开 URL + 21 个 database_id）
+scripts/manifest.json
+
+# 个人数据导出
+*.export.json
+*.import.json
+data/
+
+# ============ 大文件：8.3MB 单文件 ============
+# 当前方案：直接 commit（首次推送）
+# 后续方案：Git LFS 或拆文件
+# 生活站.html 已含 base64 莫奈图，仓库完整历史会随每次修改膨胀
+
+# ============ 系统 ============
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# ============ IDE ============
+.vscode/
+.idea/
+
+# ============ 本地日志（用户操作记录） ============
+.workbuddy/
+
+# ============ 工具临时文件 ============
+/tmp/
+*.tmp
+*.bak
+
+# ============ 凭证（任何 token 都不入库） ============
+.env
+*.token
+*.key
+/tmp/wb_token
