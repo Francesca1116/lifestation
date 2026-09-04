@@ -761,6 +761,33 @@
     .modal .form-actions { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
   }
 
+  /* ===== Confirm Modal（自定义确认对话框） ===== */
+  .confirm-bg { z-index: 110; }
+  .confirm-modal { max-width: 380px !important; padding: 24px 22px 18px !important; }
+  .confirm-modal .modal-topbar {
+    position: absolute; left: 0; right: 0; top: 0; height: 3px;
+    background: linear-gradient(90deg, #FF89A8 0%, #FFC78A 100%);
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+  }
+  .confirm-body { padding: 12px 0 0; }
+  .confirm-title {
+    font-size: 16px !important; font-weight: 700; color: var(--c-purple-deep);
+    margin-bottom: 10px !important; display: block !important;
+  }
+  .confirm-msg {
+    font-size: 14px; color: var(--c-text); line-height: 1.5; margin: 0 0 18px;
+  }
+  .confirm-actions {
+    display: flex; gap: 10px; justify-content: flex-end;
+  }
+  .confirm-actions .btn { min-width: 84px; }
+  .btn-danger {
+    background: linear-gradient(135deg, #FF6B8A 0%, #FF89A8 100%);
+    color: #fff; border: none;
+  }
+  .btn-danger:hover { filter: brightness(0.95); }
+  .confirm-cancel { background: rgba(180,156,224,0.18); color: var(--c-purple-deep); border: 1px solid var(--c-line-soft); }
+
   /* ===== Mobile · Phone (≤ 480px) · iPhone 强化 ===== */
   @media (max-width: 480px) {
     /* 顶栏：logo 更小、按钮纯图标 */
@@ -839,8 +866,9 @@
       <span class="dot"></span>
       <span class="label" id="syncLabel">离线模式</span>
       <button id="syncRetry" class="hidden">重试(0)</button>
-      <button id="exportJSON">导出</button>
+      <button id="exportJSON" title="加密导出（设密码）">导出</button>
       <button id="importJSON">导入</button>
+      <button id="historyBtn" title="查看历史快照（最近 30 份）">历史</button>
     </div>
   </header>
 
@@ -2865,11 +2893,14 @@
       Array.prototype.slice.call($c2.querySelectorAll('[data-gov-reject]')).forEach(function(b){
         b.onclick = function(){
           var id = b.getAttribute('data-gov-reject');
-          if (!confirm('删除这条 topic_event 吗？')) return;
-          storeState.tableRecords.topic_events = (storeState.tableRecords.topic_events || []).filter(function(e){ return e._id !== id; });
-          saveLocal('topic_events');
-          toast('已删除', 'success');
-          renderGovContent();
+          confirmDialog('删除这条 topic_event 吗？', { title: '删除', okText: '删除', danger: true })
+            .then(function(ok){
+              if (!ok) return;
+              storeState.tableRecords.topic_events = (storeState.tableRecords.topic_events || []).filter(function(e){ return e._id !== id; });
+              saveLocal('topic_events');
+              toast('已删除', 'success');
+              renderGovContent();
+            });
         };
       });
     }, 0);
@@ -3329,9 +3360,243 @@
     });
   }
   function saveLocal(k) {
-    try { localStorage.setItem(localKey(k), JSON.stringify(storeState.tableRecords[k] || [])); }
-    catch(e) { toast('localStorage 写入失败：' + (e && e.message || ''), 'danger'); }
+    try {
+      var json = JSON.stringify(storeState.tableRecords[k] || []);
+      localStorage.setItem(localKey(k), json);
+      // ===== 数据沉淀：自动写入 IndexedDB 镜像 + 创建快照 =====
+      try { IDB.mirror(k, json); } catch(_) {}
+      try { Snapshots.record(k, storeState.tableRecords[k] || []); } catch(_) {}
+    } catch(e) {
+      if (e && e.name === 'QuotaExceededError') {
+        toast('⚠️ localStorage 已满（5MB），请到顶栏「导出」备份并清理旧数据', 'danger', 6000);
+      } else {
+        toast('localStorage 写入失败：' + (e && e.message || ''), 'danger');
+      }
+    }
   }
+
+  /* ============================================================
+     IndexedDB 镜像层（容量大、自动备份、不依赖 localStorage）
+     ============================================================ */
+  var IDB = (function(){
+    var DB_NAME = 'lifestation_db';
+    var DB_VERSION = 1;
+    var STORE = 'records';
+    var HISTORY_STORE = 'history';
+    var _dbPromise = null;
+    function getDB() {
+      if (_dbPromise) return _dbPromise;
+      _dbPromise = new Promise(function(resolve, reject){
+        if (typeof indexedDB === 'undefined') { reject(new Error('IndexedDB 不可用')); return; }
+        var req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = function(e) {
+          var db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE)) {
+            db.createObjectStore(STORE, { keyPath: 'key' });
+          }
+          if (!db.objectStoreNames.contains(HISTORY_STORE)) {
+            var hs = db.createObjectStore(HISTORY_STORE, { keyPath: 'id', autoIncrement: true });
+            hs.createIndex('by_table', 'table', { unique: false });
+            hs.createIndex('by_time', 'ts', { unique: false });
+          }
+        };
+        req.onsuccess = function(e){ resolve(e.target.result); };
+        req.onerror = function(e){ reject(e.target.error); };
+      });
+      return _dbPromise;
+    }
+    return {
+      available: typeof indexedDB !== 'undefined',
+      mirror: function(key, json) {
+        getDB().then(function(db){
+          var tx = db.transaction(STORE, 'readwrite');
+          tx.objectStore(STORE).put({ key: key, json: json, ts: Date.now() });
+        }).catch(function(){ /* 静默失败，localStorage 仍是主存储 */ });
+      },
+      read: function(key) {
+        return getDB().then(function(db){
+          return new Promise(function(resolve, reject){
+            var tx = db.transaction(STORE, 'readonly');
+            var req = tx.objectStore(STORE).get(key);
+            req.onsuccess = function(e){ resolve(e.target.result); };
+            req.onerror = function(e){ reject(e.target.error); };
+          });
+        });
+      },
+      // 启动时尝试从 IndexedDB 回填 localStorage（如果 localStorage 丢失）
+      recoverIfEmpty: function() {
+        if (!this.available) return Promise.resolve(false);
+        var tables = ['today_tasks','calendar_events','finance_records','finance_budgets','habits','habit_logs','body','body_goals','media','projects','courses','inbox','weekly_reviews','year_plan','study_tasks','study_habits','study_checkins','study_notes','topics','topic_events','knowledge_links'];
+        var promises = tables.map(function(t){
+          var localKey = STORAGE_PREFIX + t;
+          if (localStorage.getItem(localKey)) return Promise.resolve(false);  // localStorage 有，跳过
+          return this.read(t).then(function(rec){
+            if (rec && rec.json) {
+              try {
+                var data = JSON.parse(rec.json);
+                localStorage.setItem(localKey, rec.json);
+                if (storeState.tableRecords) storeState.tableRecords[t] = data;
+                return true;
+              } catch(_) { return false; }
+            }
+            return false;
+          });
+        }.bind(this));
+        return Promise.all(promises).then(function(results){
+          return results.some(Boolean);
+        });
+      },
+      // 健康检查
+      health: function() {
+        return getDB().then(function(db){
+          return new Promise(function(resolve){
+            var tx = db.transaction(STORE, 'readonly');
+            var countReq = tx.objectStore(STORE).count();
+            countReq.onsuccess = function(){ resolve({ tableCount: countReq.result, dbName: DB_NAME }); };
+          });
+        }).catch(function(e){ return { error: e.message }; });
+      }
+    };
+  })();
+
+  /* ============================================================
+     快照系统：每次写入自动留版本，最多保留 30 份
+     ============================================================ */
+  var Snapshots = (function(){
+    var MAX_KEEP = 30;        // 总快照数
+    var MAX_PER_TABLE = 5;    // 每表最多快照数
+    var SUMMARY_KEY = STORAGE_PREFIX + 'snapshot_index';
+    var indexCache = null;
+
+    function loadIndex() {
+      if (indexCache) return indexCache;
+      try {
+        indexCache = JSON.parse(localStorage.getItem(SUMMARY_KEY) || '[]');
+      } catch(_) { indexCache = []; }
+      return indexCache;
+    }
+    function saveIndex() {
+      try { localStorage.setItem(SUMMARY_KEY, JSON.stringify(indexCache)); }
+      catch(e) {
+        // 满了 → 删最旧的
+        if (e && e.name === 'QuotaExceededError' && indexCache.length > 5) {
+          var drop = Math.ceil(indexCache.length / 2);
+          var toDrop = indexCache.splice(0, drop);
+          toDrop.forEach(function(s){ localStorage.removeItem(localKey('snapshot_' + s.id)); });
+          try { localStorage.setItem(SUMMARY_KEY, JSON.stringify(indexCache)); }
+          catch(_) {}
+        }
+      }
+    }
+    return {
+      record: function(table, records) {
+        var idx = loadIndex();
+        var id = Date.now() + '-' + Math.random().toString(36).slice(2,6);
+        var snap = { id: id, ts: Date.now(), table: table, count: (records||[]).length, reason: 'auto' };
+        try {
+          localStorage.setItem(localKey('snapshot_' + id), JSON.stringify({
+            table: table, records: records, ts: snap.ts
+          }));
+        } catch(_) { return; /* localStorage 满时跳过本次快照 */ }
+        idx.push(snap);
+        // 修剪：每表最多保留 MAX_PER_TABLE 份
+        var tableCounts = {};
+        var keepIdx = [];
+        for (var i = idx.length - 1; i >= 0; i--) {
+          var s = idx[i];
+          tableCounts[s.table] = (tableCounts[s.table] || 0) + 1;
+          if (tableCounts[s.table] <= MAX_PER_TABLE) keepIdx.unshift(s);
+          else localStorage.removeItem(localKey('snapshot_' + s.id));
+        }
+        // 总数限制
+        while (keepIdx.length > MAX_KEEP) {
+          var old = keepIdx.shift();
+          localStorage.removeItem(localKey('snapshot_' + old.id));
+        }
+        indexCache = keepIdx;
+        saveIndex();
+      },
+      list: function() { return loadIndex().slice().reverse(); },
+      get: function(id) {
+        try { return JSON.parse(localStorage.getItem(localKey('snapshot_' + id))); }
+        catch(_) { return null; }
+      },
+      restore: function(id) {
+        var snap = this.get(id);
+        if (!snap) return false;
+        var k = snap.table;
+        storeState.tableRecords[k] = snap.records || [];
+        saveLocal(k);
+        return true;
+      },
+      clear: function() {
+        var idx = loadIndex();
+        idx.forEach(function(s){ localStorage.removeItem(localKey('snapshot_' + s.id)); });
+        indexCache = [];
+        localStorage.removeItem(SUMMARY_KEY);
+      },
+      // 重建索引缓存（外部删除快照后调用）
+      refresh: function() {
+        indexCache = null;
+        return loadIndex();
+      }
+    };
+  })();
+
+  /* ============================================================
+     AES-GCM 加密导出（A+C 整合）
+     ============================================================ */
+  var Crypto = {
+    PBKDF2_ITERS: 120000,
+    enc: function(plaintextObj, password) {
+      return new Promise(function(resolve, reject){
+        if (!password) { reject(new Error('密码不能为空')); return; }
+        if (typeof crypto === 'undefined' || !crypto.subtle) { reject(new Error('当前浏览器不支持 Web Crypto')); return; }
+        var salt = crypto.getRandomValues(new Uint8Array(16));
+        var iv = crypto.getRandomValues(new Uint8Array(12));
+        crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey'])
+          .then(function(kdfKey){
+            return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: salt, iterations: Crypto.PBKDF2_ITERS, hash: 'SHA-256' }, kdfKey, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+          })
+          .then(function(aesKey){
+            var data = new TextEncoder().encode(JSON.stringify(plaintextObj));
+            return crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, aesKey, data);
+          })
+          .then(function(cipherBuf){
+            resolve({
+              v: 1,
+              alg: 'AES-GCM-256',
+              kdf: 'PBKDF2-SHA256-' + Crypto.PBKDF2_ITERS,
+              salt: Array.from(salt),
+              iv: Array.from(iv),
+              data: btoa(String.fromCharCode.apply(null, new Uint8Array(cipherBuf)))
+            });
+          })
+          .catch(reject);
+      });
+    },
+    dec: function(envelope, password) {
+      return new Promise(function(resolve, reject){
+        if (!envelope || envelope.v !== 1) { reject(new Error('不支持的加密文件版本')); return; }
+        if (typeof crypto === 'undefined' || !crypto.subtle) { reject(new Error('当前浏览器不支持 Web Crypto')); return; }
+        var salt = new Uint8Array(envelope.salt);
+        var iv = new Uint8Array(envelope.iv);
+        var cipherBytes = new Uint8Array(atob(envelope.data).split('').map(function(c){ return c.charCodeAt(0); }));
+        crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey'])
+          .then(function(kdfKey){
+            return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: salt, iterations: Crypto.PBKDF2_ITERS, hash: 'SHA-256' }, kdfKey, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+          })
+          .then(function(aesKey){
+            return crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, aesKey, cipherBytes);
+          })
+          .then(function(plainBuf){
+            var obj = JSON.parse(new TextDecoder().decode(plainBuf));
+            resolve(obj);
+          })
+          .catch(function(){ reject(new Error('密码错误或文件损坏')); });
+      });
+    }
+  };
   function getGBPrate() {
     var v = parseFloat(localStorage.getItem(localKey('currency_settings')));
     return isNaN(v) || v <= 0 ? 9.10 : v;
@@ -3444,37 +3709,166 @@
       tableRecords: storeState.tableRecords,
       settings: { currency_rate: getGBPrate(), height_cm: localStorage.getItem(localKey('height_cm')) || '' }
     };
-    var blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = '生活站-' + todayStr() + '.json';
-    a.click();
-    setTimeout(function() { URL.revokeObjectURL(a.href); }, 1000);
-    toast('已导出 JSON 备份', 'success');
+    // 弹密码输入
+    promptPassword('设置导出密码', '用于加密备份，至少 6 位', function(pwd){
+      if (pwd === null) return;  // 用户取消
+      if (pwd.length < 6) { toast('密码至少 6 位', 'danger'); return; }
+      toast('加密中…', 'success');
+      Crypto.enc(dump, pwd).then(function(envelope){
+        var json = JSON.stringify(envelope, null, 2);
+        var blob = new Blob([json], { type: 'application/octet-stream' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = '生活站-' + todayStr() + '.lifestation';
+        a.click();
+        setTimeout(function() { URL.revokeObjectURL(a.href); }, 1000);
+        toast('已加密导出 ✓（.lifestation 文件）', 'success', 3000);
+      }).catch(function(err){
+        toast('加密失败：' + (err && err.message || err), 'danger');
+      });
+    });
   });
   document.getElementById('importJSON').addEventListener('click', function() { document.getElementById('fileJSON').click(); });
   document.getElementById('fileJSON').addEventListener('change', function(e) {
     var f = e.target.files[0]; if (!f) return;
     var reader = new FileReader();
     reader.onload = function() {
+      var inputEl = e.target;
       try {
         var data = JSON.parse(reader.result);
-        if (!data.tableRecords) { toast('备份格式不匹配', 'danger'); return; }
-        if (!confirm('导入将覆盖当前所有数据，确定？')) { e.target.value = ''; return; }
-        Object.keys(data.tableRecords).forEach(function(k) {
-          if (SCHEMAS[k]) {
-            storeState.tableRecords[k] = data.tableRecords[k] || [];
-            saveLocal(k);
-          }
-        });
-        if (data.settings && data.settings.currency_rate) localStorage.setItem(localKey('currency_settings'), String(data.settings.currency_rate));
-        if (data.settings && data.settings.height_cm) localStorage.setItem(localKey('height_cm'), String(data.settings.height_cm));
-        toast('导入成功 ✓', 'success');
-        showView(VIEW);
-      } catch(err) { toast('解析失败：' + err.message, 'danger'); }
-      e.target.value = '';
+        // 检测加密文件
+        if (data && data.v === 1 && data.alg && data.alg.indexOf('AES') === 0) {
+          promptPassword('输入导入密码', '解密 .lifestation 备份', function(pwd){
+            if (pwd === null) { inputEl.value = ''; return; }
+            Crypto.dec(data, pwd).then(function(decrypted){
+              applyImport(decrypted, inputEl);
+            }).catch(function(err){
+              toast('解密失败：' + (err && err.message || '密码错误'), 'danger');
+              inputEl.value = '';
+            });
+          });
+          return;
+        }
+        if (!data.tableRecords) { toast('备份格式不匹配', 'danger'); inputEl.value = ''; return; }
+        applyImport(data, inputEl);
+      } catch(err) { toast('解析失败：' + err.message, 'danger'); inputEl.value = ''; }
     };
+
+    function applyImport(data, inputEl) {
+      confirmDialog('导入将覆盖当前所有数据，确定？', { title: '导入备份', okText: '覆盖导入', danger: true })
+        .then(function(ok){
+          if (!ok) { inputEl.value = ''; return; }
+          Object.keys(data.tableRecords).forEach(function(k) {
+            if (SCHEMAS[k]) {
+              storeState.tableRecords[k] = data.tableRecords[k] || [];
+              saveLocal(k);
+            }
+          });
+          if (data.settings && data.settings.currency_rate) localStorage.setItem(localKey('currency_settings'), String(data.settings.currency_rate));
+          if (data.settings && data.settings.height_cm) localStorage.setItem(localKey('height_cm'), String(data.settings.height_cm));
+          toast('导入成功 ✓', 'success');
+          showView(VIEW);
+          inputEl.value = '';
+        });
+    }
     reader.readAsText(f);
+  });
+
+  /* ============================================================
+     自定义密码输入对话框（解决 iframe 中 prompt 被拦截）
+     ============================================================ */
+  function promptPassword(title, hint, onResult) {
+    var html = '' +
+      '<div class="modal-bg" id="__pwBg">' +
+        '<div class="modal" style="max-width:380px">' +
+          '<div class="modal-topbar"></div>' +
+          '<div class="confirm-body">' +
+            '<h3 class="confirm-title">' + escapeHTML(title) + '</h3>' +
+            (hint ? '<p class="confirm-msg">' + escapeHTML(hint) + '</p>' : '') +
+            '<input type="password" id="__pwInput" autocomplete="off" style="width:100%;padding:11px 13px;border:1.5px solid var(--c-line-soft);border-radius:var(--r-sm);font-size:16px;background:#fff;color:var(--c-text);font-family:inherit;margin-bottom:16px">' +
+            '<div class="confirm-actions">' +
+              '<button class="btn confirm-cancel" id="__pwCancel">取消</button>' +
+              '<button class="btn btn-primary" id="__pwOk">确定</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    $modalRoot.innerHTML = html;
+    var bg = document.getElementById('__pwBg');
+    var input = document.getElementById('__pwInput');
+    var okBtn = document.getElementById('__pwOk');
+    var cancelBtn = document.getElementById('__pwCancel');
+    function done(v) { if (bg && bg.parentNode) bg.parentNode.removeChild(bg); onResult(v); }
+    okBtn.addEventListener('click', function(){ done(input.value); });
+    cancelBtn.addEventListener('click', function(){ done(null); });
+    bg.addEventListener('click', function(e){ if (e.target === bg) done(null); });
+    input.addEventListener('keydown', function(e){ if (e.key === 'Enter') done(input.value); });
+    setTimeout(function(){ input.focus(); }, 60);
+  }
+
+  /* ============================================================
+     历史快照模态框
+     ============================================================ */
+  document.getElementById('historyBtn').addEventListener('click', function(){
+    var list = Snapshots.list();
+    var rows = '';
+    if (list.length === 0) {
+      rows = '<p style="text-align:center;color:var(--c-muted);padding:30px">还没有快照。<br>每次写操作后会自动留版本。</p>';
+    } else {
+      list.forEach(function(s){
+        var t = new Date(s.ts);
+        var timeStr = t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')+' '+String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0');
+        rows += '<div class="hist-row" data-snap-id="' + s.id + '" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px dashed var(--c-line-soft)">' +
+          '<div><div style="font-weight:600">' + escapeHTML(s.table) + '</div><div style="font-size:12px;color:var(--c-muted)">' + timeStr + ' · ' + s.count + ' 条</div></div>' +
+          '<div style="display:flex;gap:8px"><button class="btn hist-restore" data-snap-id="' + s.id + '" style="padding:6px 12px;font-size:12px">回滚</button><button class="btn hist-del" data-snap-id="' + s.id + '" style="padding:6px 12px;font-size:12px;background:rgba(255,107,138,0.15);color:#FF6B8A">删</button></div>' +
+        '</div>';
+      });
+    }
+    var idx = Snapshots.list().length;
+    var html = '<div class="modal-bg" id="__histBg"><div class="modal" style="max-width:520px;max-height:80vh">' +
+      '<div class="modal-topbar"></div>' +
+      '<div class="confirm-body">' +
+        '<h3 class="confirm-title">历史快照 (' + idx + ' 份)</h3>' +
+        '<p class="confirm-msg">每次写操作自动留版本。点击「回滚」把对应表的数据恢复到该时刻。</p>' +
+        '<div style="max-height:50vh;overflow-y:auto;border:1px solid var(--c-line-soft);border-radius:8px;background:rgba(255,255,255,0.5)">' + rows + '</div>' +
+        '<div class="confirm-actions" style="margin-top:16px"><button class="btn confirm-cancel" id="__histClose">关闭</button>' +
+        (idx > 0 ? '<button class="btn btn-danger" id="__histClearAll" style="background:rgba(255,107,138,0.15);color:#FF6B8A">清空所有</button>' : '') +
+        '</div></div></div></div>';
+    $modalRoot.innerHTML = html;
+    var bg = document.getElementById('__histBg');
+    document.getElementById('__histClose').addEventListener('click', function(){ if (bg.parentNode) bg.parentNode.removeChild(bg); });
+    var clearBtn = document.getElementById('__histClearAll');
+    if (clearBtn) clearBtn.addEventListener('click', function(){
+      confirmDialog('清空所有历史快照？此操作不可撤销。', { title: '清空快照', okText: '清空', danger: true })
+        .then(function(ok){ if (!ok) return; Snapshots.clear(); if (bg.parentNode) bg.parentNode.removeChild(bg); toast('已清空所有快照', 'success'); });
+    });
+    bg.addEventListener('click', function(e){
+      var restore = e.target.closest && e.target.closest('.hist-restore');
+      var del = e.target.closest && e.target.closest('.hist-del');
+      if (restore) {
+        var id = restore.getAttribute('data-snap-id');
+        var snap = Snapshots.get(id);
+        if (!snap) return;
+        confirmDialog('回滚「' + snap.table + '」到 ' + new Date(snap.ts).toLocaleString() + '？当前该表数据会被覆盖。', { title: '回滚确认', okText: '回滚', danger: true })
+          .then(function(ok){
+            if (!ok) return;
+            if (Snapshots.restore(id)) { toast('已回滚 ✓', 'success'); if (bg.parentNode) bg.parentNode.removeChild(bg); showView(VIEW); }
+          });
+      } else if (del) {
+        var id2 = del.getAttribute('data-snap-id');
+        var snap2 = Snapshots.get(id2);
+        if (!snap2) return;
+        localStorage.removeItem(localKey('snapshot_' + id2));
+        var idx2 = JSON.parse(localStorage.getItem(STORAGE_PREFIX + 'snapshot_index') || '[]');
+        var ni = idx2.filter(function(s){ return s.id !== id2; });
+        localStorage.setItem(STORAGE_PREFIX + 'snapshot_index', JSON.stringify(ni));
+        Snapshots.refresh();
+        del.closest('.hist-row').remove();
+        toast('已删除该快照', 'success');
+      } else if (e.target === bg) {
+        bg.parentNode.removeChild(bg);
+      }
+    });
   });
 
   /* ============================================================
@@ -3549,12 +3943,57 @@
   }
   function closeModal() { $modalRoot.innerHTML = ''; }
 
+  /* ============================================================
+     自定义确认对话框（解决 iframe 环境 window.confirm 被拦截问题）
+     ============================================================ */
+  function confirmDialog(message, opts) {
+    opts = opts || {};
+    return new Promise(function(resolve) {
+      var title = opts.title || '确认操作';
+      var okText = opts.okText || '确定';
+      var cancelText = opts.cancelText || '取消';
+      var danger = opts.danger !== false; // 默认危险操作样式
+      var html = '' +
+        '<div class="modal-bg confirm-bg" id="__confirmBg">' +
+          '<div class="modal confirm-modal" style="max-width:380px">' +
+            '<div class="modal-topbar"></div>' +
+            '<div class="confirm-body">' +
+              '<h3 class="confirm-title">' + escapeHTML(title) + '</h3>' +
+              '<p class="confirm-msg">' + escapeHTML(message) + '</p>' +
+              '<div class="confirm-actions">' +
+                '<button class="btn confirm-cancel" id="__confirmCancel">' + escapeHTML(cancelText) + '</button>' +
+                '<button class="btn ' + (danger ? 'btn-danger' : 'btn-primary') + ' confirm-ok" id="__confirmOk">' + escapeHTML(okText) + '</button>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      $modalRoot.innerHTML = html;
+      var bg = document.getElementById('__confirmBg');
+      var okBtn = document.getElementById('__confirmOk');
+      var cancelBtn = document.getElementById('__confirmCancel');
+      function done(result) {
+        if (bg && bg.parentNode) bg.parentNode.removeChild(bg);
+        resolve(result);
+      }
+      okBtn.addEventListener('click', function(){ done(true); });
+      cancelBtn.addEventListener('click', function(){ done(false); });
+      bg.addEventListener('click', function(e){ if (e.target === bg) done(false); });
+      setTimeout(function(){ okBtn.focus(); }, 60);
+    });
+  }
+
   function deleteAndRefresh(tableKey, recordId, msg) {
-    if (!confirm('确定删除"' + (msg || '这条记录') + '"？此操作不可撤销。')) return;
-    Store.deleteRecord(tableKey, recordId).then(function() {
-      toast('已删除', 'success');
-      renderAll();
-    }).catch(function(err) { toast('删除失败：' + (err && err.message || err), 'danger'); });
+    confirmDialog('确定删除"' + (msg || '这条记录') + '"？此操作不可撤销。', {
+      title: '删除',
+      okText: '删除',
+      danger: true
+    }).then(function(ok){
+      if (!ok) return;
+      Store.deleteRecord(tableKey, recordId).then(function() {
+        toast('已删除', 'success');
+        renderAll();
+      }).catch(function(err) { toast('删除失败：' + (err && err.message || err), 'danger'); });
+    });
   }
 
   /* ============================================================
@@ -4906,6 +5345,15 @@
      ============================================================ */
   function init() {
     loadLocal();
+    // 数据沉淀：localStorage 为空时，尝试从 IndexedDB 镜像恢复
+    if (IDB.available) {
+      IDB.recoverIfEmpty().then(function(recovered){
+        if (recovered) {
+          diag('从 IndexedDB 镜像恢复部分表', 'log');
+          // 重新加载 storeState（已被 recoverIfEmpty 更新）
+        }
+      }).catch(function(){});
+    }
     updateSyncState(USE_SDK ? 'syncing' : 'offline');
     // 群组 detail 视图默认 body data-group = life；但默认进入 dashboard 视图
     document.body.setAttribute('data-view', 'dashboard');
