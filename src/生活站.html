@@ -735,21 +735,96 @@
   }
   .inbox-input input:focus { border-color: var(--c-purple); }
 
-  /* Mobile */
+  /* ===== Mobile · Tablet (≤ 768px) ===== */
   @media (max-width: 768px) {
     .boards-grid { grid-template-columns: 1fr; }
     .dash-hero-grid { grid-template-columns: 1fr; }
     .dash-kpis { grid-template-columns: 1fr 1fr; }
-    .sidebar { display: none; }
-    .app { display: block; }
-    main { padding: 14px 14px calc(60px + var(--safe-b)); }
-    header { padding: 12px 14px calc(12px + var(--safe-b)); }
-    .brand h1 { font-size: 15px; }
+    /* sidebar 改成图标条而非隐藏 —— 群组切换还要用 */
+    .sidebar { width: 60px; padding: 12px 4px; }
+    .sidebar .side-label,
+    .sidebar .side-section-label,
+    .sidebar .side-child,
+    .sidebar .side-year-meta { display: none !important; }
+    .sidebar .side-item { justify-content: center; padding: 8px 0; }
+    .sidebar-toggle { right: 4px; top: 8px; width: 20px; height: 20px; font-size: 10px; }
+    .app { display: flex; }
+    main { padding: 12px 12px calc(60px + var(--safe-b)); min-width: 0; }
+    header { padding: 10px 12px calc(10px + var(--safe-b)); gap: 6px; }
+    .brand h1 { font-size: 14px; letter-spacing: 0.3px; }
+    .logo { width: 30px; height: 30px; }
     .sync .label { display: none; }
+    .sync button { padding: 5px 9px; font-size: 11px; }
     .mod-head h3 { font-size: 16px; }
     .modal { padding: 20px 16px 0; max-height: 94vh; }
     .modal form { padding-bottom: 12px; }
     .modal .form-actions { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+  }
+
+  /* ===== Mobile · Phone (≤ 480px) · iPhone 强化 ===== */
+  @media (max-width: 480px) {
+    /* 顶栏：logo 更小、按钮纯图标 */
+    .brand { gap: 8px; }
+    .logo { width: 26px; height: 26px; }
+    .brand h1 { font-size: 13px; }
+    .sync { gap: 4px; }
+    .sync button { padding: 4px 8px; font-size: 10px; border-radius: 8px; }
+
+    /* sidebar 进一步压成 48px 图标条 */
+    .sidebar { width: 48px; padding: 8px 2px; }
+    .sidebar .side-item { font-size: 18px; padding: 10px 0; }
+    .sidebar-toggle { width: 18px; height: 18px; font-size: 9px; }
+
+    /* main 留出 sidebar 48px */
+    main { padding: 10px 10px calc(50px + var(--safe-b)); }
+
+    /* 卡片：缩小内边距、字号 */
+    .glass-card, .mod-card, .cal-card, .kpi-card { padding: 12px 12px; }
+    .mod-card { font-size: 13px; }
+    h2 { font-size: 18px !important; }
+    h3 { font-size: 14px !important; }
+
+    /* KPI grid 单列 */
+    .dash-kpis { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .kpi-card { padding: 10px 8px; }
+    .kpi-card .v { font-size: 18px !important; }
+    .kpi-card .l { font-size: 10px; }
+
+    /* 子标签页 subbar 横向滚动 */
+    .subbar { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding: 6px 8px; }
+    .subbar button { flex: 0 0 auto; padding: 6px 10px; font-size: 12px; }
+    .subbar::-webkit-scrollbar { display: none; }
+
+    /* 日历：横向不溢出、日期数字缩小 */
+    .cal-card { padding: 12px 8px; }
+    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+    .cal-grid .wd { font-size: 10px; padding: 4px 0; letter-spacing: 0.3px; }
+    .cal-grid .day { font-size: 11px; padding: 6px 0; min-width: 0; border-radius: 8px; }
+    .cal-grid .day .pip { width: 3px; height: 3px; }
+    .cal-month-title, .cal-title { font-size: 16px !important; }
+
+    /* 模态框：全屏化 */
+    .modal { width: 100vw; max-width: 100vw; max-height: 100vh; height: 100vh; border-radius: 0; padding: 16px 14px 0; }
+    .modal-bg { align-items: stretch; padding: 0; }
+    .modal form { padding-bottom: 12px; }
+
+    /* 表格：横向滚动 */
+    .table-wrap, table { overflow-x: auto; max-width: 100%; }
+    table { font-size: 12px; }
+    th, td { padding: 6px 4px; }
+
+    /* 按钮 */
+    button { font-size: 13px; }
+    .btn { padding: 8px 14px; }
+    .mod-head { flex-wrap: wrap; gap: 6px; }
+    .mod-head h3 { font-size: 14px; }
+
+    /* Observatory 卡片 */
+    .obs-card { padding: 12px; }
+    .obs-card h3 { font-size: 14px; }
+
+    /* 隐藏桌面上必要但手机上无用的元素 */
+    .desktop-only { display: none !important; }
   }
 </style>
 </head>
@@ -3581,6 +3656,11 @@
       $sideBar.style.display = 'block';
       $dashShell.classList.remove('active');
       $groupShell.classList.add('active');
+      // iPhone / 手机：进入群组详情时自动折叠 sidebar 成图标条
+      if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) {
+        $sideBar.classList.add('collapsed');
+        document.getElementById('sidebarToggle').textContent = '›';
+      }
       renderSidebar();
       renderSubBar();
       renderMod();
