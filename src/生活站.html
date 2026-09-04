@@ -3359,7 +3359,18 @@
       return Promise.resolve(storeState.tableRecords[key] || []);
     },
     addRecord: function(key, props) {
-      if (USE_SDK) return SDK.addRecord({ databaseId: NAMESPACE_IDS[key], properties: props }).then(function(){ storeState.lastSync = Date.now(); updateSyncState('synced'); }).catch(function(err){ queue.push({op:'add',key:key,props:props}); updateSyncState('error'); throw err; });
+      if (USE_SDK) {
+        try { console.log('[LifeStation] addRecord', key, NAMESPACE_IDS[key], props); } catch(_){}
+        return SDK.addRecord({ databaseId: NAMESPACE_IDS[key], properties: props })
+          .then(function(){ storeState.lastSync = Date.now(); updateSyncState('synced'); })
+          .catch(function(err){
+            try { console.error('[LifeStation] addRecord FAILED', key, err); } catch(_){}
+            if (typeof toast === 'function') toast('写入失败: ' + (err && err.message || err), 'danger', 6000);
+            queue.push({op:'add',key:key,props:props});
+            updateSyncState('error');
+            throw err;
+          });
+      }
       var r = Object.assign({_id: uid(), _ts: Date.now()}, props);
       if (!storeState.tableRecords[key]) storeState.tableRecords[key] = [];
       storeState.tableRecords[key].unshift(r); saveLocal(key);
@@ -4899,6 +4910,16 @@
     // 群组 detail 视图默认 body data-group = life；但默认进入 dashboard 视图
     document.body.setAttribute('data-view', 'dashboard');
     document.body.setAttribute('data-group', 'life');
+
+    // ===== 诊断日志：所有写入失败排查都用这个 =====
+    function diag(msg, type) { try { console[type || 'log']('[LifeStation]', msg); } catch(_){} }
+    diag('init: USE_SDK=' + USE_SDK + ', SDK=' + (SDK ? 'present' : 'missing') +
+         ', bootstrap=' + (window.__PUBLISH_BOOTSTRAP__ ? 'present' : 'missing') +
+         ', userInfo=' + JSON.stringify((window.__PUBLISH_BOOTSTRAP__||{}).userInfo||{}));
+    if (USE_SDK) {
+      diag('SDK methods: ' + Object.keys(SDK).join(','));
+    }
+
     if (USE_SDK) {
       // 拉所有 21 张表
       Promise.all(Object.keys(SCHEMAS).map(function(k){
@@ -4910,6 +4931,9 @@
         try { seedTopics(); seedTopicEventsFromExisting(); } catch(e){ console.error('seed v5 err', e); }
         showView('dashboard');
       }).catch(function(err){
+        diag('SDK 初始化失败：' + (err && err.message || err), 'error');
+        var msg = 'SDK 错误：' + (err && err.message || err);
+        if (typeof toast === 'function') toast(msg, 'danger', 8000);
         updateSyncState('error');
         showView('dashboard');
       });
