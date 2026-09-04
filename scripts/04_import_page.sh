@@ -3,7 +3,12 @@
 # 04_import_page.sh
 # -----------------------------------------------------------------------------
 # 读 manifest.json，调 import_html.py 上传"生活站.ready.html"到资料库 page 节点，
-# 同时绑定 9 张 database；输出 PAGE_NODE_ID 到 manifest.json 的 page_node_id 字段。
+# 同时绑定 21 张 database；输出 PAGE_NODE_ID 到 manifest.json 的 page_node_id 字段。
+#
+# 智能模式：
+#   - manifest 有 page_node_id → 走 UPDATE（覆盖原 HTML + 重绑 databases）
+#   - manifest 无 page_node_id → 走 CREATE（创建新 page）
+# 这样可以无限次重跑 03-04-05 而不污染 page 列表。
 #
 # 使用：
 #   bash 04_import_page.sh
@@ -14,7 +19,7 @@ set -euo pipefail
 WB_SKILL_DIR="${WB_SKILL_DIR:-/Users/hujiayun/.workbuddy/plugins/cache/workbuddy-builtin/skill-library/0.5.9}"
 TOKEN_FILE="${TOKEN_FILE:-/tmp/wb_token}"
 MANIFEST="${MANIFEST:-$(dirname "$0")/manifest.json}"
-HTML_FILE="${HTML_FILE:-/Users/hujiayun/WorkBuddy/2026-08-31-14-03-28/生活站.ready.html}"
+HTML_FILE="${HTML_FILE:-$(dirname "$0")/../src/生活站.ready.html}"
 
 if [ ! -s "$TOKEN_FILE" ]; then
   echo "ERROR: token file '$TOKEN_FILE' empty or missing." >&2
@@ -40,14 +45,23 @@ manifest = json.loads(open(manifest_path, encoding='utf-8').read())
 databases = [{"id": t["database_id"]} for t in manifest["tables"]]
 databases_json = json.dumps(databases, ensure_ascii=False)
 
-proc = subprocess.run(
-    ["python3", f"{skill_dir}/page/import_html.py",
-     html_path,
-     "--file-name", "生活站.html",
-     "--databases", databases_json,
-     "--token-stdin"],
-    input=token, text=True, capture_output=True
-)
+# 关键：如果 manifest 里已经有 page_node_id，走"更新"模式而非"新建"
+existing_page_id = manifest.get("page_node_id", "").strip()
+mode_label = "[UPDATE]" if existing_page_id else "[CREATE]"
+
+cmd = ["python3", f"{skill_dir}/page/import_html.py",
+       html_path,
+       "--file-name", "生活站.html",
+       "--databases", databases_json,
+       "--token-stdin"]
+if existing_page_id:
+    cmd += ["--node-block-id", existing_page_id]
+
+print(f"{mode_label} importing {html_path}")
+if existing_page_id:
+    print(f"           (re-importing into existing page {existing_page_id})")
+
+proc = subprocess.run(cmd, input=token, text=True, capture_output=True)
 
 out = proc.stdout.strip()
 if proc.returncode != 0 or not out or "KS_IMPORT_OK" not in out:

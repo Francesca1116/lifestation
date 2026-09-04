@@ -28,6 +28,13 @@ if not page_id:
     print("ERROR: manifest 缺少 page_node_id，请先跑 04_import_page.sh", file=sys.stderr)
     sys.exit(2)
 
+# 已发布过：提示但仍继续（重发一般返回新 URL，旧的会失效）
+existing_publish = manifest.get("publish_url", "")
+if existing_publish:
+    print(f"  [note] 之前已发布到：{existing_publish}")
+    print(f"  [note] 重新发布会生成新 URL，旧的将失效")
+    print()
+
 proc = subprocess.run(
     ["python3", f"{skill_dir}/page/publish_page.py",
      "--token-stdin", "--node-id", page_id],
