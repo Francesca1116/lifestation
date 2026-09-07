@@ -869,6 +869,7 @@
       <button id="exportJSON" title="加密导出（设密码）">导出</button>
       <button id="importJSON">导入</button>
       <button id="historyBtn" title="查看历史快照（最近 30 份）">历史</button>
+      <button id="moreBtn" title="更多功能（加载示例/清空数据）">⋯</button>
     </div>
   </header>
 
@@ -4324,14 +4325,20 @@
         '<button id="addYearPlan">+ 添加今年计划</button>'+
       '</div>';
     } else {
-      var primary = yearPlans[0];
-      var pct = parseFloat(primary['当前完成']) || 0;
-      html += '<div class="side-year-card">'+
-        '<div class="year-title">📅 今年计划</div>'+
-        '<div class="year-content">' + escapeHTML(primary['标题']) + '</div>'+
-        '<div class="year-meta">进度 ' + Math.round(pct) + '% · 截止 ' + (primary['截止'] || '—') + '</div>'+
-        '<button id="addYearPlan">+ 添加新计划</button>'+
-      '</div>';
+      // 显示所有计划（不止 primary），每条带编辑按钮
+      yearPlans.forEach(function(yp, i){
+        var pct = parseFloat(yp['当前完成']) || 0;
+        html += '<div class="side-year-card" style="position:relative">'+
+          '<div class="year-title">📅 ' + (yearPlans.length > 1 ? ('计划 ' + (i+1)) : '今年计划') + '</div>'+
+          '<div class="year-content">' + escapeHTML(yp['标题']) + '</div>'+
+          '<div class="year-meta">进度 ' + Math.round(pct) + '% · 截止 ' + (yp['截止'] || '—') + '</div>' +
+          '<div style="display:flex;gap:6px;margin-top:8px">' +
+            '<button class="yp-edit" data-ypid="' + yp._id + '" style="flex:1;padding:5px 10px;font-size:11px;border:1px solid var(--c-line-soft);background:rgba(180,156,224,0.15);color:var(--c-purple-deep);border-radius:8px;cursor:pointer;font-family:inherit">编辑</button>' +
+            '<button class="yp-del" data-ypid="' + yp._id + '" style="padding:5px 10px;font-size:11px;border:1px solid var(--c-line-soft);background:rgba(255,107,138,0.12);color:#FF6B8A;border-radius:8px;cursor:pointer;font-family:inherit">删</button>' +
+          '</div>' +
+        '</div>';
+      });
+      html += '<button id="addYearPlan" style="width:100%;padding:6px;font-size:12px;border:1px dashed var(--c-line-soft);background:rgba(255,255,255,0.4);color:var(--c-purple-deep);border-radius:10px;cursor:pointer;font-family:inherit;margin-top:4px">+ 再添加一个计划</button>';
     }
     html += '<div style="height:24px"></div>';
     $sideBarContent.innerHTML = html;
@@ -4356,17 +4363,167 @@
       });
     });
     var addBtn = document.getElementById('addYearPlan');
-    if (addBtn) addBtn.addEventListener('click', openYearPlanModal);
+    if (addBtn) addBtn.addEventListener('click', function(){ openYearPlanModal(); });
+    // 编辑/删除按钮
+    Array.prototype.slice.call($sideBarContent.querySelectorAll('.yp-edit')).forEach(function(b){
+      b.addEventListener('click', function(){
+        var id = b.getAttribute('data-ypid');
+        var rec = (storeState.tableRecords.year_plan || []).find(function(r){ return r._id === id; });
+        if (rec) openYearPlanModal(rec);
+      });
+    });
+    Array.prototype.slice.call($sideBarContent.querySelectorAll('.yp-del')).forEach(function(b){
+      b.addEventListener('click', function(){
+        var id = b.getAttribute('data-ypid');
+        var rec = (storeState.tableRecords.year_plan || []).find(function(r){ return r._id === id; });
+        if (!rec) return;
+        confirmDialog('删除「' + (rec['标题'] || '此计划') + '」？', { title: '删除年度计划', okText: '删除', danger: true })
+          .then(function(ok){
+            if (!ok) return;
+            Store.deleteRecord('year_plan', id).then(function(){
+              toast('已删除', 'success');
+              showView(VIEW);
+            }).catch(function(err){ toast('删除失败：' + (err && err.message || err), 'danger'); });
+          });
+      });
+    });
   }
 
-  function openYearPlanModal() {
-    openModal('添加年度计划', SCHEMAS.year_plan, function(props){
-      if (!props['标题']) { toast('请输入标题', 'danger'); return Promise.reject(); }
-      Store.addRecord('year_plan', props).then(function(){
-        toast('已加入今年计划 ✓', 'success');
-        showView(VIEW);
+  function openYearPlanModal(editRec) {
+    var isEdit = !!editRec;
+    var rec = editRec || { '类型': '年度大目标', '开始': todayStr().slice(0,7)+'-01', '颜色':'紫', '状态':'进行中' };
+    // 解析节点任务（关键节点 字段存 JSON 字符串）
+    var nodes = [];
+    try {
+      if (rec['关键节点']) {
+        var parsed = typeof rec['关键节点'] === 'string' ? JSON.parse(rec['关键节点']) : rec['关键节点'];
+        if (Array.isArray(parsed)) nodes = parsed;
+      }
+    } catch(_) { nodes = []; }
+    if (!nodes.length) nodes = [{name:'', pct:0, deadline:''}];
+
+    function nodeRowHtml(n, i) {
+      return '<div class="ynode-row" data-idx="' + i + '" style="display:grid;grid-template-columns:2fr 1fr 1.2fr 32px;gap:8px;align-items:center;margin-bottom:6px">' +
+        '<input type="text" class="ynode-name" placeholder="节点名（如：报名）" value="' + escapeHTML(String(n.name || '')) + '" style="padding:8px 10px;border:1px solid var(--c-line-soft);border-radius:8px;font-size:13px;background:#fff;font-family:inherit">' +
+        '<input type="number" min="0" max="100" class="ynode-pct" placeholder="完成%" value="' + (n.pct || 0) + '" style="padding:8px 10px;border:1px solid var(--c-line-soft);border-radius:8px;font-size:13px;background:#fff;font-family:inherit">' +
+        '<input type="date" class="ynode-dl" value="' + escapeHTML(String(n.deadline || '')) + '" style="padding:8px 10px;border:1px solid var(--c-line-soft);border-radius:8px;font-size:13px;background:#fff;font-family:inherit">' +
+        '<button type="button" class="ynode-del" style="border:none;background:rgba(255,107,138,0.12);color:#FF6B8A;border-radius:8px;height:32px;cursor:pointer;font-size:14px">×</button>' +
+        '</div>';
+    }
+
+    var html = '<div class="modal-bg" id="__ypBg"><div class="modal" style="max-width:540px">' +
+      '<div class="topbar"></div>' +
+      '<h3>' + SVG.year + ' ' + (isEdit ? '编辑' : '新增') + '年度计划</h3>' +
+      '<form id="__ypForm" onsubmit="return false">' +
+        '<div class="form-row"><label>计划名 *</label><input name="标题" value="' + escapeHTML(String(rec['标题'] || '')) + '" placeholder="如：雅思 7.0 / 完成《代码大全》" required></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+          '<div class="form-row"><label>类型</label><select name="类型">' + ['年度大目标','OKR','习惯养成','读书','职业'].map(function(o){ return '<option' + (rec['类型']===o?' selected':'') + '>' + o + '</option>'; }).join('') + '</select></div>' +
+          '<div class="form-row"><label>状态</label><select name="状态">' + ['进行中','已完成','已搁置'].map(function(o){ return '<option' + (rec['状态']===o?' selected':'') + '>' + o + '</option>'; }).join('') + '</select></div>' +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+          '<div class="form-row"><label>开始</label><input type="date" name="开始" value="' + escapeHTML(String(rec['开始'] || '')) + '"></div>' +
+          '<div class="form-row"><label>截止</label><input type="date" name="截止" value="' + escapeHTML(String(rec['截止'] || '')) + '"></div>' +
+        '</div>' +
+        '<div class="form-row"><label>颜色</label><select name="颜色">' + ['紫','粉','蓝','绿','橙'].map(function(o){ return '<option' + (rec['颜色']===o?' selected':'') + '>' + o + '</option>'; }).join('') + '</select></div>' +
+        '<div class="form-row">' +
+          '<label style="display:flex;justify-content:space-between;align-items:center">' +
+            '<span>节点任务 <span style="font-weight:400;color:var(--c-muted)">（完成度决定计划进度）</span></span>' +
+            '<button type="button" id="__ypAddNode" style="border:none;background:rgba(180,156,224,0.18);color:var(--c-purple-deep);padding:4px 12px;border-radius:8px;cursor:pointer;font-size:12px">+ 添加节点</button>' +
+          '</label>' +
+          '<div style="display:grid;grid-template-columns:2fr 1fr 1.2fr 32px;gap:8px;font-size:11px;color:var(--c-muted);padding:0 2px;margin-bottom:4px">' +
+            '<span>节点名</span><span>完成%</span><span>截止</span><span></span>' +
+          '</div>' +
+          '<div id="__ypNodesList">' + nodes.map(nodeRowHtml).join('') + '</div>' +
+          '<div id="__ypSummary" style="margin-top:10px;padding:12px 14px;background:rgba(180,156,224,0.10);border-radius:10px;font-size:13px;color:var(--c-purple-deep)"></div>' +
+        '</div>' +
+      '</form>' +
+      '<div class="form-actions">' +
+        (isEdit ? '<button type="button" class="btn btn-danger" id="__ypDel" style="margin-right:auto;background:rgba(255,107,138,0.15);color:#FF6B8A">删除</button>' : '') +
+        '<button type="button" class="btn btn-ghost" id="__ypCancel">取消</button>' +
+        '<button type="button" class="btn btn-primary" id="__ypSave">保存</button>' +
+      '</div>' +
+      '</div></div>';
+    $modalRoot.innerHTML = html;
+    var bg = document.getElementById('__ypBg');
+    var form = document.getElementById('__ypForm');
+
+    function refreshSummary() {
+      var names = form.querySelectorAll('.ynode-name');
+      var pcts = form.querySelectorAll('.ynode-pct');
+      var total = 0, count = 0;
+      for (var i = 0; i < names.length; i++) {
+        if (names[i].value.trim()) {
+          total += Math.max(0, Math.min(100, parseFloat(pcts[i].value) || 0));
+          count++;
+        }
+      }
+      var avg = count ? Math.round(total / count) : 0;
+      document.getElementById('__ypSummary').innerHTML = '📊 自动进度：<strong>' + avg + '%</strong>' + (count ? ' （' + count + ' 个节点）' : '（无节点）');
+    }
+
+    form.addEventListener('input', function(e){
+      if (e.target.classList.contains('ynode-pct') || e.target.classList.contains('ynode-name')) refreshSummary();
+    });
+
+    document.getElementById('__ypAddNode').addEventListener('click', function(){
+      var list = document.getElementById('__ypNodesList');
+      var idx = list.children.length;
+      list.insertAdjacentHTML('beforeend', nodeRowHtml({name:'',pct:0,deadline:''}, idx));
+      refreshSummary();
+    });
+
+    bg.addEventListener('click', function(e){
+      if (e.target.classList && e.target.classList.contains('ynode-del')) {
+        var row = e.target.closest('.ynode-row');
+        if (row) row.remove();
+        refreshSummary();
+      }
+    });
+
+    document.getElementById('__ypCancel').addEventListener('click', function(){ bg.remove(); });
+    var delBtn = document.getElementById('__ypDel');
+    if (delBtn) delBtn.addEventListener('click', function(){
+      confirmDialog('删除「' + (rec['标题'] || '此计划') + '」？', { title: '删除年度计划', okText: '删除', danger: true })
+        .then(function(ok){
+          if (!ok) return;
+          Store.deleteRecord('year_plan', rec._id).then(function(){
+            toast('已删除', 'success'); bg.remove(); showView(VIEW);
+          }).catch(function(err){ toast('删除失败：' + (err && err.message || err), 'danger'); });
+        });
+    });
+
+    document.getElementById('__ypSave').addEventListener('click', function(){
+      var props = {
+        '标题': form.elements['标题'].value.trim(),
+        '类型': form.elements['类型'].value,
+        '状态': form.elements['状态'].value,
+        '开始': form.elements['开始'].value,
+        '截止': form.elements['截止'].value,
+        '颜色': form.elements['颜色'].value,
+        '关键节点': '[]',
+        '当前完成': 0
+      };
+      if (!props['标题']) { toast('请输入计划名', 'danger'); return; }
+      // 收集节点
+      var rows = form.querySelectorAll('.ynode-row');
+      var nodes = [];
+      var total = 0, count = 0;
+      rows.forEach(function(row){
+        var name = row.querySelector('.ynode-name').value.trim();
+        var pct = Math.max(0, Math.min(100, parseFloat(row.querySelector('.ynode-pct').value) || 0));
+        var dl = row.querySelector('.ynode-dl').value;
+        if (name) { nodes.push({name:name, pct:pct, deadline:dl}); total += pct; count++; }
+      });
+      props['关键节点'] = JSON.stringify(nodes);
+      props['当前完成'] = count ? Math.round(total / count) : 0;
+      var p = isEdit ? Store.updateRecord('year_plan', rec._id, props) : Store.addRecord('year_plan', props);
+      p.then(function(){
+        toast(isEdit ? '已更新' : '已加入今年计划 ✓', 'success');
+        bg.remove(); showView(VIEW);
       }).catch(function(err){ toast('保存失败：' + (err && err.message || err), 'danger'); });
-    }, { '类型': '年度大目标', '开始': todayStr().slice(0,7)+'-01', '颜色':'紫' }, SVG.year);
+    });
+
+    refreshSummary();
   }
 
   /* ============================================================
@@ -5505,6 +5662,90 @@
   }
 
   /* ============================================================
+     ONBOARDING + 顶栏 ⋯ 菜单（加载示例 / 清空数据）
+     ============================================================ */
+  function showOnboarding() {
+    var html = '<div class="modal-bg" id="__onbBg" style="z-index:120">' +
+      '<div class="modal" style="max-width:460px;padding:30px 24px 22px">' +
+        '<div class="modal-topbar"></div>' +
+        '<div style="text-align:center;font-size:36px;margin-bottom:8px">🌅</div>' +
+        '<h3 style="text-align:center;font-size:20px;color:var(--c-purple-deep);margin:0 0 8px;font-weight:700">欢迎来到生活站</h3>' +
+        '<p style="text-align:center;color:var(--c-muted);font-size:13px;line-height:1.6;margin:0 0 22px">一体化工作学习生活工作台 · 5 群组 · 21 张表 · Personal Observatory</p>' +
+        '<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px">' +
+          '<button class="btn btn-primary" id="__onbEmpty" style="padding:12px;font-size:14px">从空白开始（推荐）</button>' +
+          '<button class="btn" id="__onbSeed" style="padding:12px;font-size:14px;background:rgba(180,156,224,0.15);color:var(--c-purple-deep);border:1px solid var(--c-line-soft)">加载示例数据（看看效果）</button>' +
+          '<button class="btn" id="__onbImport" style="padding:12px;font-size:14px;background:rgba(255,255,255,0.5);color:var(--c-purple-deep);border:1px solid var(--c-line-soft)">从 .lifestation 备份导入</button>' +
+        '</div>' +
+        '<p style="font-size:11px;color:var(--c-muted);text-align:center;line-height:1.5;margin:0">数据存浏览器 localStorage，关闭/刷新不会丢<br>可随时顶栏「导出」加密备份</p>' +
+      '</div></div>';
+    $modalRoot.innerHTML = html;
+    var bg = document.getElementById('__onbBg');
+    function done(choice) {
+      try { localStorage.setItem(STORAGE_PREFIX + 'onboarded', '1'); } catch(_) {}
+      if (bg && bg.parentNode) bg.parentNode.removeChild(bg);
+      if (choice === 'seed') { seedExampleData(); showView('dashboard'); renderAll(); toast('已加载示例数据', 'success'); }
+      else if (choice === 'import') { document.getElementById('fileJSON').click(); }
+      else { showView('dashboard'); }
+    }
+    document.getElementById('__onbEmpty').addEventListener('click', function(){ done('empty'); });
+    document.getElementById('__onbSeed').addEventListener('click', function(){ done('seed'); });
+    document.getElementById('__onbImport').addEventListener('click', function(){ done('import'); });
+  }
+
+  document.getElementById('moreBtn').addEventListener('click', function(e){
+    e.stopPropagation();
+    var existing = document.getElementById('__moreMenu');
+    if (existing) { existing.remove(); return; }
+    var btn = document.getElementById('moreBtn');
+    var rect = btn.getBoundingClientRect();
+    var menu = document.createElement('div');
+    menu.id = '__moreMenu';
+    menu.style.cssText = 'position:fixed;top:' + (rect.bottom + 6) + 'px;right:' + (window.innerWidth - rect.right) + 'px;background:#fff;border:1px solid var(--c-line-soft);border-radius:12px;box-shadow:0 8px 32px rgba(60,60,90,0.18);padding:6px;z-index:200;min-width:200px';
+    menu.innerHTML =
+      '<button data-act="seed" style="width:100%;padding:10px 14px;border:none;background:none;text-align:left;border-radius:8px;cursor:pointer;font-size:13px;color:var(--c-text);font-family:inherit">📋 加载示例数据</button>' +
+      '<button data-act="export" style="width:100%;padding:10px 14px;border:none;background:none;text-align:left;border-radius:8px;cursor:pointer;font-size:13px;color:var(--c-text);font-family:inherit">💾 加密导出</button>' +
+      '<button data-act="import" style="width:100%;padding:10px 14px;border:none;background:none;text-align:left;border-radius:8px;cursor:pointer;font-size:13px;color:var(--c-text);font-family:inherit">📥 导入备份</button>' +
+      '<div style="height:1px;background:var(--c-line-soft);margin:4px 2px"></div>' +
+      '<button data-act="reset" style="width:100%;padding:10px 14px;border:none;background:none;text-align:left;border-radius:8px;cursor:pointer;font-size:13px;color:#FF6B8A;font-family:inherit">🗑 清空所有数据</button>';
+    document.body.appendChild(menu);
+    menu.addEventListener('click', function(ev){
+      var act = ev.target.getAttribute && ev.target.getAttribute('data-act');
+      if (!act) return;
+      menu.remove();
+      if (act === 'seed') {
+        confirmDialog('加载示例数据会覆盖当前所有 21 张表的内容，确定？', { title: '加载示例', okText: '覆盖加载', danger: true })
+          .then(function(ok){ if (!ok) return; seedExampleData(); showView(VIEW); renderAll(); toast('已加载示例数据', 'success'); });
+      } else if (act === 'export') {
+        document.getElementById('exportJSON').click();
+      } else if (act === 'import') {
+        document.getElementById('fileJSON').click();
+      } else if (act === 'reset') {
+        confirmDialog('清空所有 21 张表 + settings，无法撤销。确定？', { title: '清空所有数据', okText: '全部清空', danger: true })
+          .then(function(ok){
+            if (!ok) return;
+            Object.keys(SCHEMAS).forEach(function(k){
+              storeState.tableRecords[k] = [];
+              try { localStorage.removeItem(localKey(k)); } catch(_) {}
+            });
+            try { localStorage.removeItem(localKey('currency_settings')); } catch(_) {}
+            try { localStorage.removeItem(localKey('height_cm')); } catch(_) {}
+            try { localStorage.removeItem(STORAGE_PREFIX + 'onboarded'); } catch(_) {}
+            showView('dashboard'); renderAll();
+            toast('已清空所有数据', 'success');
+          });
+      }
+    });
+    // 点击其他区域关闭
+    setTimeout(function(){
+      document.addEventListener('click', function close(){
+        var m = document.getElementById('__moreMenu');
+        if (m) m.remove();
+        document.removeEventListener('click', close);
+      });
+    }, 0);
+  });
+
+  /* ============================================================
      INIT
      ============================================================ */
   function init() {
@@ -5550,13 +5791,20 @@
         showView('dashboard');
       });
     } else {
-      var seeded = localStorage.getItem(localKey('seeded_v2'));
-      if (!seeded) {
-        // v4 示例数据 — 复用 v3 seed + 加 year_plan / study_* 几条
-        seedExampleData();
-        localStorage.setItem(localKey('seeded_v2'),'1');
-      } else {
-        loadLocal();
+      // 修复：不再自动 seedExampleData！
+      // 原因：iOS Safari ITP / 隐私模式 / 配额满 等场景会清空 localStorage，
+      //       导致 seeded_v2 标志丢失 → 下次刷新会重新 seed → 用户数据被覆盖
+      // 解决：默认空白启动，只在用户主动点击"加载示例数据"按钮时才 seed
+      loadLocal();
+      // 清理过期的 seeded_v2 标志（如果还在）
+      try { localStorage.removeItem(localKey('seeded_v2')); } catch(_) {}
+      // 检查是否需要 onboarding（首次使用 + 数据完全为空）
+      var hasAnyData = Object.keys(storeState.tableRecords).some(function(k){
+        return storeState.tableRecords[k] && storeState.tableRecords[k].length > 0;
+      });
+      var isFirstRun = !localStorage.getItem(STORAGE_PREFIX + 'onboarded');
+      if (isFirstRun && !hasAnyData) {
+        setTimeout(function(){ showOnboarding(); }, 600);
       }
       // V5/V6: 业务 records 加载后，跑 topics + backfill events
       try { seedTopics(); seedTopicEventsFromExisting(); } catch(e){ console.error('seed v5 err', e); }
