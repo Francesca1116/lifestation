@@ -41,3 +41,6 @@ Thumbs.db
 *.token
 *.key
 /tmp/wb_token
+
+# ============ 部署目录（sites_deploy 用的副本） ============
+deploy/
