@@ -957,7 +957,11 @@
      ============================================================ */
   var STORAGE_PREFIX = 'dc_lifestation_';
   var SDK = (window.__SMART_PAGE__ && window.__SMART_PAGE__.database) || null;
-  var USE_SDK = !!SDK;
+  // 检测 iframe 模式：workbuddy.link 的 page 渲染器把我们装在 iframe 里，
+  // 父窗口的 userInfo 在跨子域下为空（workbuddy.cn Cookie 不共享到 workbuddy.link）
+  // SDK 注入存在但实际写入被 server 拒。所以 iframe 环境强制用 localStorage。
+  var IN_IFRAME = (function(){ try { return window.self !== window.top; } catch(_){ return true; }})();
+  var USE_SDK = !!SDK && !IN_IFRAME;
   var NAMESPACE_IDS = {
     today_tasks:      '__DB_TODAY_TASKS__',
     calendar_events:  '__DB_CALENDAR_EVENTS__',
@@ -3773,6 +3777,166 @@
     }
     reader.readAsText(f);
   });
+
+  /* ============================================================
+     GitHub Gist 云端同步模块
+     ============================================================ */
+  var CloudSync = (function(){
+    var CONFIG_KEY = STORAGE_PREFIX + 'cloud_config';
+    var SYNC_INTERVAL = 5000;  // 5 秒防抖
+    var syncTimer = null;
+    var lastSyncAt = null;
+    var syncing = false;
+    var lastError = null;
+    var listeners = [];
+
+    function loadConfig() {
+      try { return JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}'); }
+      catch(_) { return {}; }
+    }
+    function saveConfig(cfg) {
+      try { localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg)); return true; }
+      catch(e) { return false; }
+    }
+    function emit(evt) { listeners.forEach(function(fn){ try{ fn(evt); }catch(_){} }); }
+
+    function buildDump() {
+      return {
+        version: 4,
+        exportedAt: new Date().toISOString(),
+        tableRecords: storeState.tableRecords,
+        settings: {
+          currency_rate: getGBPrate(),
+          height_cm: localStorage.getItem(localKey('height_cm')) || ''
+        }
+      };
+    }
+
+    function gistRequest(method, gistId, body) {
+      var cfg = loadConfig();
+      if (!cfg.token) return Promise.reject(new Error('未配置 GitHub Token'));
+      var url = gistId ? ('https://api.github.com/gists/' + gistId) : 'https://api.github.com/gists';
+      var headers = {
+        'Authorization': 'token ' + cfg.token,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+      };
+      if (body) headers['Content-Type'] = 'application/json';
+      return fetch(url, { method: method, headers: headers, body: body ? JSON.stringify(body) : undefined })
+        .then(function(resp){
+          if (!resp.ok) {
+            if (resp.status === 401) throw new Error('Token 无效或过期');
+            if (resp.status === 404) throw new Error('Gist 不存在（首次同步需要创建）');
+            return resp.text().then(function(t){ throw new Error('GitHub API ' + resp.status + ': ' + t.substring(0, 200)); });
+          }
+          return resp.json();
+        });
+    }
+
+    return {
+      isConfigured: function(){ var c = loadConfig(); return !!(c.token); },
+      isReady: function(){ var c = loadConfig(); return !!(c.token && c.gistId); },
+      getConfig: loadConfig,
+      saveConfig: saveConfig,
+      on: function(fn){ listeners.push(fn); return function(){ listeners = listeners.filter(function(f){ return f !== fn; }); }; },
+      getStatus: function(){ return { syncing: syncing, lastSyncAt: lastSyncAt, lastError: lastError, ready: this.isReady() }; },
+
+      // 创建新 Gist（首次配置时）
+      createGist: function(){
+        var initial = { description: 'Life Station backup', public: false, files: { 'lifestation.json': { content: '{}' } } };
+        return gistRequest('POST', null, initial).then(function(data){
+          var cfg = loadConfig();
+          cfg.gistId = data.id;
+          saveConfig(cfg);
+          return data.id;
+        });
+      },
+
+      // 拉取（解密 + 应用到本地）
+      pull: function(){
+        var cfg = loadConfig();
+        if (!cfg.token || !cfg.gistId) return Promise.reject(new Error('未配置'));
+        syncing = true; emit({type:'sync-start', op:'pull'});
+        return gistRequest('GET', cfg.gistId, null).then(function(data){
+          var file = data.files && (data.files['lifestation.json'] || data.files['lifestation.json.enc']);
+          if (!file || !file.content) throw new Error('Gist 中无 lifestation.json');
+          var content = file.content;
+          var isEncrypted = content.trim().indexOf('"v":1') === 0;  // 简化检测
+          var dump;
+          if (isEncrypted) {
+            dump = null;  // 加密文件需要密码，延迟到用户输入
+            throw new Error('Gist 是加密备份，需要在导入流程中输入密码');
+          }
+          dump = JSON.parse(content);
+          // 合并到本地（last-write-wins 简化版：直接覆盖）
+          Object.keys(dump.tableRecords || {}).forEach(function(k){
+            if (SCHEMAS[k]) storeState.tableRecords[k] = dump.tableRecords[k] || [];
+          });
+          if (dump.settings && dump.settings.currency_rate) localStorage.setItem(localKey('currency_settings'), String(dump.settings.currency_rate));
+          if (dump.settings && dump.settings.height_cm) localStorage.setItem(localKey('height_cm'), String(dump.settings.height_cm));
+          // 写 localStorage + 镜像
+          Object.keys(dump.tableRecords || {}).forEach(function(k){
+            if (SCHEMAS[k]) saveLocal(k);
+          });
+          lastSyncAt = Date.now();
+          lastError = null;
+          syncing = false;
+          emit({type:'sync-done', op:'pull', at: lastSyncAt});
+          return dump;
+        }).catch(function(err){
+          lastError = err.message || String(err);
+          syncing = false;
+          emit({type:'sync-error', op:'pull', error: lastError});
+          throw err;
+        });
+      },
+
+      // 推送（明文 JSON，gist 是私密的所以足够安全）
+      push: function(){
+        var cfg = loadConfig();
+        if (!cfg.token) return Promise.reject(new Error('未配置 GitHub Token'));
+        if (!cfg.gistId) {
+          // 自动创建
+          return this.createGist().then(function(id){
+            return this.push();
+          }.bind(this));
+        }
+        syncing = true; emit({type:'sync-start', op:'push'});
+        var dump = buildDump();
+        var body = {
+          files: { 'lifestation.json': { content: JSON.stringify(dump, null, 2) } }
+        };
+        return gistRequest('PATCH', cfg.gistId, body).then(function(data){
+          lastSyncAt = Date.now();
+          lastError = null;
+          syncing = false;
+          emit({type:'sync-done', op:'push', at: lastSyncAt});
+          return true;
+        }).catch(function(err){
+          lastError = err.message || String(err);
+          syncing = false;
+          emit({type:'sync-error', op:'push', error: lastError});
+          throw err;
+        });
+      },
+
+      // 防抖自动同步（每次写操作后调用）
+      scheduleSync: function(){
+        if (!this.isReady()) return;
+        if (syncTimer) clearTimeout(syncTimer);
+        syncTimer = setTimeout(function(){
+          syncTimer = null;
+          CloudSync.push().catch(function(){});
+        }, SYNC_INTERVAL);
+      },
+
+      // 立即同步（手动点按钮）
+      syncNow: function(){
+        if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+        return this.push();
+      }
+    };
+  })();
 
   /* ============================================================
      自定义密码输入对话框（解决 iframe 中 prompt 被拦截）
