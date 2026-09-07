@@ -1954,7 +1954,34 @@
     var events = obsGetEvents();
     if (!topics.length) {
       $c.innerHTML = obsPageHeader('Universe｜主题星图', '主题之间是什么结构 · 节点大小=Depth · 亮度=Momentum · 连粗=Association') +
-        '<div class="empty" style="padding:60px;text-align:center;background:rgba(255,255,255,0.6);border-radius:18px">还没有主题 · 在 Settings › Topics 里创建，或录入新数据后回来</div>';
+        '<div class="empty" style="padding:40px 20px;text-align:center;background:rgba(255,255,255,0.6);border-radius:18px">' +
+          '<div style="font-size:36px;margin-bottom:8px">🌌</div>' +
+          '<div style="font-weight:600;color:var(--c-purple-deep);margin-bottom:6px">还没有主题</div>' +
+          '<div style="color:var(--c-muted);font-size:13px;line-height:1.6;margin-bottom:16px">主题应该从你的真实数据自动产生：<br>加书、课程、项目 → 这里会出现对应主题</div>' +
+          '<div style="display:flex;gap:8px;justify-content:center">' +
+            '<button id="obsSeedBtn" class="btn" style="padding:8px 16px;font-size:13px;background:rgba(180,156,224,0.18);color:var(--c-purple-deep);border:1px solid var(--c-line-soft);border-radius:8px;cursor:pointer;font-family:inherit">导入预设主题（看看效果）</button>' +
+            '<button id="obsAddBtn" class="btn" style="padding:8px 16px;font-size:13px;background:rgba(255,255,255,0.6);color:var(--c-purple-deep);border:1px solid var(--c-line-soft);border-radius:8px;cursor:pointer;font-family:inherit">手动添加主题</button>' +
+          '</div>' +
+        '</div>';
+      // 绑定按钮
+      setTimeout(function(){
+        var sb = document.getElementById('obsSeedBtn');
+        if (sb) sb.addEventListener('click', function(){
+          confirmDialog('导入 12 个预设主题（AI/产品/学习类）？会与你的真实数据混合显示', { title: '导入预设主题', okText: '导入', danger: false })
+            .then(function(ok){
+              if (!ok) return;
+              // 强制 seed（不检查 length）
+              storeState.tableRecords.topics = SEED_TOPICS.map(function(t){
+                return { _id: uid(), _ts: Date.now(), '主题名': t.canonical_name, '别名': t.aliases, '类型': t.type, '说明': t.desc, '创建时间': new Date().toISOString().slice(0,10), '治理状态': 'active', '分析状态': 'Developing' };
+              });
+              saveLocal('topics');
+              renderObsUniverse($c);
+              toast('已导入预设主题', 'success');
+            });
+        });
+        var ab = document.getElementById('obsAddBtn');
+        if (ab) ab.addEventListener('click', function(){ openAddTopicModal($c); });
+      }, 0);
       return;
     }
     var core = obsCoreTopic();
@@ -5662,6 +5689,47 @@
   }
 
   /* ============================================================
+     手动添加主题（Observatory 空状态时调用）
+     ============================================================ */
+  function openAddTopicModal($c) {
+    var html = '<div class="modal-bg" id="__atBg"><div class="modal" style="max-width:440px">' +
+      '<div class="topbar"></div>' +
+      '<h3>' + SVG.overview + ' 手动添加主题</h3>' +
+      '<form id="__atForm" onsubmit="return false">' +
+        '<div class="form-row"><label>主题名 *</label><input name="主题名" required placeholder="如：雅思 / AI产品 / 写作"></div>' +
+        '<div class="form-row"><label>类型</label><select name="类型">' + ['学习','工作','生活','兴趣','技能','健康'].map(function(o){ return '<option>' + o + '</option>'; }).join('') + '</select></div>' +
+        '<div class="form-row"><label>别名（逗号分隔）</label><input name="别名" placeholder="如：English,IELTS,English Learning"></div>' +
+        '<div class="form-row"><label>说明</label><textarea name="说明" rows="3" placeholder="这个主题对你意味着什么？"></div>' +
+      '</form>' +
+      '<div class="form-actions">' +
+        '<button type="button" class="btn btn-ghost" id="__atCancel">取消</button>' +
+        '<button type="button" class="btn btn-primary" id="__atSave">添加</button>' +
+      '</div>' +
+      '</div></div>';
+    $modalRoot.innerHTML = html;
+    var bg = document.getElementById('__atBg');
+    var form = document.getElementById('__atForm');
+    document.getElementById('__atCancel').addEventListener('click', function(){ bg.remove(); });
+    document.getElementById('__atSave').addEventListener('click', function(){
+      var props = {
+        '主题名': form.elements['主题名'].value.trim(),
+        '类型': form.elements['类型'].value,
+        '别名': form.elements['别名'].value.trim(),
+        '说明': form.elements['说明'].value.trim(),
+        '创建时间': new Date().toISOString().slice(0,10),
+        '治理状态': 'active',
+        '分析状态': 'Developing'
+      };
+      if (!props['主题名']) { toast('请输入主题名', 'danger'); return; }
+      Store.addRecord('topics', props).then(function(){
+        toast('已添加主题 ✓', 'success');
+        bg.remove();
+        renderObsUniverse($c);
+      }).catch(function(err){ toast('保存失败：' + (err && err.message || err), 'danger'); });
+    });
+  }
+
+  /* ============================================================
      ONBOARDING + 顶栏 ⋯ 菜单（加载示例 / 清空数据）
      ============================================================ */
   function showOnboarding() {
@@ -5781,7 +5849,9 @@
         });
       })).then(function(){
         updateSyncState('synced');
-        try { seedTopics(); seedTopicEventsFromExisting(); } catch(e){ console.error('seed v5 err', e); }
+        // 只从已有 media/courses/notes 等真实数据 backfill events
+        // 不再自动 seed 12 个预设主题（避免覆盖用户真实状态）
+        try { seedTopicEventsFromExisting(); } catch(e){ console.error('seed events err', e); }
         showView('dashboard');
       }).catch(function(err){
         diag('SDK 初始化失败：' + (err && err.message || err), 'error');
@@ -5806,8 +5876,10 @@
       if (isFirstRun && !hasAnyData) {
         setTimeout(function(){ showOnboarding(); }, 600);
       }
-      // V5/V6: 业务 records 加载后，跑 topics + backfill events
-      try { seedTopics(); seedTopicEventsFromExisting(); } catch(e){ console.error('seed v5 err', e); }
+      // V5/V6: 只从已有 media/courses/notes 等真实数据 backfill events
+      // 不再自动 seedTopics()（避免填充 12 个预设主题）
+      // 主题应该从你的真实数据自动产生，或在 Observatory 页面"导入预设"按钮触发
+      try { seedTopicEventsFromExisting(); } catch(e){ console.error('seed events err', e); }
       /* V6: 绑定 Observatory 入口 - 切到 obs 群组，sidebar 出现 */
       var obsEntry = document.getElementById('obsEntry');
       if (obsEntry) obsEntry.addEventListener('click', function(){
