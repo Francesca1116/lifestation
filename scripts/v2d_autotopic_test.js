@@ -113,51 +113,21 @@ const topicName = (id) => { const t = TR.topics.find(x => x._id === id); return 
 TR.courses.push({ _id: 'c1', '课程名': '深度学习实战', '平台': '自学', '开始': '2026-09-01' });
 TR.projects.push({ _id: 'p1', '项目名': 'Agent 评估实验室', '状态': '进行中', '开始': '2026-08-15' });
 TR.media.push({ _id: 'm1', '标题': '《置身事内》', '类型': '书', '状态': '进行中', '添加': '2026-10-01' });
-TR.year_plan.push({ _id: 'y1', '标题': '雅思 7.0', '类型': '年度大目标', '开始': '2026-01-01' });
+TR.year_plan.push({ _id: 'y1', '标题': '雅思 7.0', '开始': '2026-01-01' });
 TR.study_notes.push({ _id: 'n1', '标题': 'Transformer 注意力机制笔记', '日期': '2026-10-10' });
 
-// ===== 测试 1：自动生成主题 =====
+// ===== 测试 1：autoGenerateTopicsFromData 已软停用（停止标题自动建主题）=====
 const r1 = sandbox.autoGenerateTopicsFromData();
-check(1, '返回 topics_added 正确（5 个主题）', r1.topics_added === 5, 'got ' + r1.topics_added);
-check(1.1, '返回 events_added 正确（5 条事件）', r1.events_added === 5, 'got ' + r1.events_added);
+check(1, '软停用后 topics_added = 0', r1.topics_added === 0, 'got ' + r1.topics_added);
+check(1.1, '软停用后 events_added = 0', r1.events_added === 0, 'got ' + r1.events_added);
+check(1.2, '软停用后主表 topics 仍为空', TR.topics.length === 0, 'got ' + TR.topics.length);
+check(1.3, '软停用后主表 topic_events 仍为空', TR.topic_events.length === 0, 'got ' + TR.topic_events.length);
 
-// ===== 测试 2：类型推断 =====
-const tCourse = TR.topics.find(t => t['主题名'] === '深度学习实战');
-const tProj = TR.topics.find(t => t['主题名'] === 'Agent 评估实验室');
-const tMedia = TR.topics.find(t => t['主题名'] === '置身事内');
-const tYear = TR.topics.find(t => t['主题名'] === '雅思 7.0');
-const tNote = TR.topics.find(t => t['主题名'] === 'Transformer 注意力机制笔记');
-check(2, '课程 → 聚焦', tCourse && tCourse['类型'] === '聚焦');
-check(2.1, '项目 → 领域', tProj && tProj['类型'] === '领域');
-check(2.2, '书 → 领域', tMedia && tMedia['类型'] === '领域');
-check(2.3, '年度计划 → 领域', tYear && tYear['类型'] === '领域');
-check(2.4, '笔记 → 聚焦', tNote && tNote['类型'] === '聚焦');
-
-// ===== 测试 3：书名号已清洗 =====
-check(3, '书名《》被清洗为「置身事内」', tMedia && tMedia['主题名'] === '置身事内');
-
-// ===== 测试 4：主表 topic_events 生成 + 字段对齐 =====
-const evCourse = TR.topic_events.find(e => e['来源表'] === 'courses' && e['来源记录 ID'] === 'c1');
-check(4, '课程事件生成', !!evCourse);
-check(4.1, '课程事件阶段 = E2 Learn', evCourse && evCourse['阶段'] === 'E2 Learn');
-check(4.2, '课程事件主题 ID 正确', evCourse && evCourse['主题 ID'] === tCourse._id);
-const evProj = TR.topic_events.find(e => e['来源表'] === 'projects' && e['来源记录 ID'] === 'p1');
-check(4.3, '项目事件阶段 = E4 Apply', evProj && evProj['阶段'] === 'E4 Apply');
-
-// ===== 测试 5：幂等（二次调用不重复）=====
-const beforeTopics = TR.topics.length;
-const beforeEvents = TR.topic_events.length;
-const r5 = sandbox.autoGenerateTopicsFromData();
-check(5, '二次调用 topics_added = 0', r5.topics_added === 0);
-check(5.1, '二次调用 events_added = 0', r5.events_added === 0);
-check(5.2, 'topics 总数不变', TR.topics.length === beforeTopics);
-check(5.3, 'events 总数不变', TR.topic_events.length === beforeEvents);
-
-// ===== 测试 6：已有同名主题复用（不新增）=====
-TR.courses.push({ _id: 'c2', '课程名': '深度学习实战（进阶）'.slice(0, 0) + '深度学习实战', '开始': '2026-10-01' });
-const r6 = sandbox.autoGenerateTopicsFromData();
-check(6, '同名课程复用已有主题（不新增 topics）', r6.topics_added === 0);
-check(6.1, '但为该记录生成新事件', r6.events_added === 1);
+// ===== 测试 2：二次调用仍不产生主题（软停用幂等）=====
+const r2 = sandbox.autoGenerateTopicsFromData();
+check(2, '二次调用仍 topics_added = 0', r2.topics_added === 0);
+check(2.1, '二次调用仍不新增主表主题', TR.topics.length === 0, 'got ' + TR.topics.length);
+check(2.2, '二次调用仍不新增主表事件', TR.topic_events.length === 0, 'got ' + TR.topic_events.length);
 
 // ===== 测试 7：手动关联 → 影子存储 → 主表投影 =====
 // 给课程 c1 手动关联一个已有主题（core）

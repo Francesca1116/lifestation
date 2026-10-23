@@ -1487,7 +1487,6 @@
     ],
     year_plan: [
       {name:'标题', type:'text', required:true},
-      {name:'类型', type:'select', options:['年度大目标','OKR','习惯养成','读书','职业']},
       {name:'关键节点', type:'textarea', rows:4},
       {name:'当前完成', type:'number'},
       {name:'状态', type:'select', options:['进行中','已完成','已搁置']},
@@ -4398,9 +4397,14 @@
      从真实数据提取主题 + 生成事件（幂等，写主表 topics / topic_events）
      类型推断：项目/年度计划/书影音 → 领域；课程/笔记 → 聚焦 */
   function autoGenerateTopicsFromData() {
+    // 【已停用】方案第二节第 2 点：停止「标题自动建主题」。
+    // 主题只能通过「用户主动创建 / 确认推荐(topicSuggestCandidates) / 合并已有」进入正式主题库。
+    // 记录标题只作为贡献证据，不再自动成为主题。此函数保留但软停用（防御：误调用也不建主题）。
     var recs = storeState.tableRecords;
     recs.topics = recs.topics || [];
     recs.topic_events = recs.topic_events || [];
+    return { topics_added: 0, events_added: 0, topics_total: recs.topics.length, events_total: recs.topic_events.length };
+    /* 以下为原「标题自动建主题」逻辑，已停用保留待删
     var topics = recs.topics;
     var events = recs.topic_events;
     var addedTopics = 0, addedEvents = 0;
@@ -4482,6 +4486,82 @@
     if (addedTopics) { try { saveLocal('topics'); } catch(_){} }
     if (addedEvents) { try { saveLocal('topic_events'); } catch(_){} }
     return { topics_added: addedTopics, events_added: addedEvents, topics_total: topics.length, events_total: events.length };
+    */
+  }
+
+  /* ============================================================
+     候选主题推荐（方案第二节第 3 点「用户确认推荐」）
+     停止标题自动建主题后，保存记录不再凭空建主题；
+     改为从「正式主题库 + 预设主题名(SEED_TOPICS)」做包含匹配，
+     弹推荐让用户确认。只有用户确认后才产生正式主题 / 关联。
+     ============================================================ */
+  // 候选推荐触发的记录类型（可关联主题的 7 类）
+  var SUGGEST_TOPIC_TABLES = ['projects','year_plan','courses','today_tasks','study_tasks','study_notes','media'];
+
+  function topicSuggestCandidates(text) {
+    if (!text) return [];
+    var lower = String(text).toLowerCase();
+    var cands = [], seen = {};
+    function add(topicId, name, source, matched, extra) {
+      var key = source + ':' + (topicId || name);
+      if (seen[key] || !name || matched.length < 2) return;
+      seen[key] = 1;
+      var c = { id: topicId, name: name, source: source, matched: matched, score: matched.length };
+      if (extra) for (var k in extra) c[k] = extra[k];
+      cands.push(c);
+    }
+    // 1) 正式主题库（非 _auto，未归档/合并）
+    (storeState.tableRecords.topics || []).forEach(function(t){
+      if (!t || !t['主题名'] || t._auto) return;
+      if (t['治理状态'] === 'archived' || t['治理状态'] === 'merged') return;
+      var names = [t['主题名']].concat(String(t['别名']||'').split(/[,，]/).map(function(s){return s.trim();}).filter(Boolean));
+      names.forEach(function(n){ if (lower.indexOf(n.toLowerCase()) >= 0) add(t._id, t['主题名'], 'existing', n); });
+    });
+    // 2) 预设主题名（候选创建正式主题）
+    (SEED_TOPICS || []).forEach(function(s){
+      var names = [s.canonical_name].concat(String(s.aliases||'').split(/[,，]/).map(function(x){return x.trim();}).filter(Boolean));
+      names.forEach(function(n){ if (lower.indexOf(n.toLowerCase()) >= 0) add(null, s.canonical_name, 'seed', n, { type:s.type, aliases:s.aliases, desc:s.desc }); });
+    });
+    // 排序：已有主题优先，匹配词越长越优先
+    cands.sort(function(a,b){ return (b.source==='existing') - (a.source==='existing') || (b.score - a.score); });
+    return cands;
+  }
+
+  function v2a_suggestTopicForRecord(key, rec) {
+    if (!rec || !rec._id) return;
+    if (SUGGEST_TOPIC_TABLES.indexOf(key) < 0) return; // 仅对可关联主题的记录类型触发
+    // 已手动关联主题则不打扰
+    try {
+      var store = v25_loadStore();
+      var linked = (store.topic_links || []).some(function(l){
+        return l && l.record_type === key && l.record_id === rec._id && l.review_status !== 'rejected' && l.topic_role !== 'ambient';
+      });
+      if (linked) return;
+    } catch(e) {}
+    var text = rec['标题'] || rec['项目名'] || rec['课程名'] || rec['内容'] || '';
+    var cands = topicSuggestCandidates(text);
+    if (!cands.length) return;
+    var c = cands[0];
+    // 延迟弹窗，避免与记录保存 modal 的 closeModal 冲突（closeModal 会清空 $modalRoot）
+    setTimeout(function(){
+      confirmDialog('这条记录可能属于「' + c.name + '」，是否关联？', { title:'主题推荐', okText:'关联', cancelText:'忽略', danger:false })
+        .then(function(ok){
+          if (!ok) return;
+          var topicId = c.id;
+          if (c.source === 'seed') {
+            storeState.tableRecords.topics = storeState.tableRecords.topics || [];
+            var exist = storeState.tableRecords.topics.filter(function(x){ return x['主题名'] === c.name; })[0];
+            if (exist) topicId = exist._id;
+            else {
+              var t = { _id: uid(), _ts: Date.now(), '主题名': c.name, '别名': c.aliases || '', '类型': c.type || '领域', '说明': c.desc || '用户确认创建', '创建时间': todayStr(), '治理状态': 'active', '分析状态': 'Developing' };
+              storeState.tableRecords.topics.push(t); topicId = t._id;
+              try { saveLocal('topics'); } catch(e){}
+            }
+          }
+          try { v2a_applyRoleOverridesToStore(key, rec._id, { core:[topicId], supporting:[] }); } catch(e){}
+          if (typeof toast === 'function') toast('已关联「' + c.name + '」', 'success');
+        });
+    }, 80);
   }
 
   /* v2a_syncLinkToMainEvents(record_type, record_id):
@@ -4628,7 +4708,8 @@
   var obsCtx = {};  // 主题数据缓存
 
   function obsGetTopics() {
-    var all = topicsList();
+    // 未确认的 _auto 主题（标题型自动主题）不参与任何分析（贡献/星图/趋势/关系建议）
+    var all = topicsList().filter(function(x){ return !x._auto; });
     var t = obsFilter.type;
     if (t && t !== 'All') {
       all = all.filter(function(x){ return x['类型'] === t; });
@@ -5944,18 +6025,37 @@
     if (table === 'inbox') return rec['状态'] === '已处理' || rec['状态'] === '已归档';
     return true;
   }
-  function obsContributionWeight(e) {
-    var typeW = {projects:1.5,year_plan:1.45,today_tasks:1,study_tasks:1.05,courses:1.2,study_checkins:.62,study_notes:1.05,media:1.05,weekly_reviews:1.1,inbox:.75};
-    var roleW = e['主题角色'] === 'secondary' ? .55 : 1;
-    var stageW = STAGE_WEIGHT[e['阶段']] || 1;
-    var confidence = parseFloat(e['置信度']); if (!isFinite(confidence) || confidence <= 0) confidence = 1;
-    var topicW = parseFloat(e['主题权重']); if (!isFinite(topicW) || topicW <= 0) topicW = 1;
-    return (typeW[e['来源表']] || 1) * roleW * stageW * confidence * topicW;
+  // 统一贡献口径权重表（方案第四节）：贡献分 = 记录类型权重 × 主题角色权重 × 成果阶段权重
+  // 完成权重已由 obsEventIsRealized 的 0/1 过滤实现（未完成/进行中不计入）
+  var OBS_TYPE_WEIGHT = {
+    today_tasks: 1.0,    // 普通任务
+    study_tasks: 1.0,    // 学习任务
+    courses: 1.2,        // 课程阶段完成
+    study_notes: 1.0,    // 学习笔记
+    media: 1.0,          // 书影音完成
+    study_checkins: 0.5, // 习惯打卡
+    weekly_reviews: 1.0, // 复盘
+    inbox: 1.0           // Inbox
+  };
+  function obsContributionWeight(e, rec) {
+    var table = e['来源表'];
+    var typeW;
+    if (table === 'projects' || table === 'year_plan') {
+      // 项目/年度计划：成果 1.6（已完成），里程碑 1.4（进行中）
+      typeW = (rec && rec['状态'] === '已完成') ? 1.6 : 1.4;
+    } else {
+      typeW = OBS_TYPE_WEIGHT[table];
+    }
+    if (typeW == null) typeW = 1.0;
+    var roleW = e['主题角色'] === 'secondary' ? 0.5 : 1.0; // 主要 1.0 / 同时涉及 0.5
+    var stageW = STAGE_WEIGHT[e['阶段']] || 1;              // 成果阶段（沿用 E1–E6）
+    return typeW * roleW * stageW;
   }
   function aggregateTopicContributions(days, offsetDays) {
     days = days || 30; offsetDays = offsetDays || 0;
     var topics = obsGetTopics(), byId = {}, habitSeen = {}, habitDayCount = {};
-    var habitDayCap = Math.min(60, Math.max(3, Math.round(days * .4)));
+    // 习惯限制（方案第四节）：每天最多计一次；周期内最多计 N 天，表达持续性但不过度压过项目成果
+    var habitDayCap = ({7:3, 30:12, 90:30})[days] || 60;
     topics.forEach(function(t){ byId[t._id] = {topicId:t._id,topic:t,period:days,score:0,previousPeriodScore:0,changeRate:0,completedRecordCount:0,activeDays:0,sourceBreakdown:{},roleBreakdown:{primary:0,secondary:0},recentRecords:[],_recordKeys:{},_days:{}}; });
     topicEvents().forEach(function(e){
       var tid=e['主题 ID'], item=byId[tid]; if(!item) return;
@@ -5967,7 +6067,7 @@
         if(habitSeen[hk] || (habitDayCount[tid]||0) >= habitDayCap) return;
         habitSeen[hk]=1; habitDayCount[tid]=(habitDayCount[tid]||0)+1;
       }
-      var w=obsContributionWeight(e); item.score+=w;
+      var w=obsContributionWeight(e, rec); item.score+=w;
       var source=obsSourceLabel(table); item.sourceBreakdown[source]=(item.sourceBreakdown[source]||0)+w;
       var role=e['主题角色']==='secondary'?'secondary':'primary'; item.roleBreakdown[role]+=w;
       item._days[date]=1;
@@ -6047,7 +6147,7 @@
     var html='<div class="growth-shell"><section class="growth-hero"><div class="growth-hero-row"><div><h2>主题发展</h2><p>把最近完成的事，沉淀为持续成长的主题。</p></div>'+growthPeriodHTML()+'</div>'+
       '<div class="growth-kpis"><div class="growth-kpi"><b>'+Object.keys(completed).length+'</b><span>本期完成记录</span></div><div class="growth-kpi"><b>'+items.length+'</b><span>活跃主题</span></div><div class="growth-kpi"><b>'+Object.keys(activeDays).length+'</b><span>有积累的天数</span></div></div></section>';
     if(!topics.length) {
-      html+='<section class="growth-panel growth-empty"><strong style="display:block;color:#42364D;margin-bottom:7px">还没有主题</strong>新建项目、课程、笔记或书影音后，主题会自动出现；也可以稍后手动关联。</section></div>';
+      html+='<section class="growth-panel growth-empty"><strong style="display:block;color:#42364D;margin-bottom:7px">还没有正式主题</strong>你可以在创建记录时选择主题，也可以稍后统一整理。</section></div>';
       $c.innerHTML=html; bindGrowthPeriod($c,renderObsUniverse); return;
     }
     html+='<div class="growth-grid"><section class="growth-panel"><div class="growth-section-head"><h3>主题贡献排行</h3><span>加权贡献 · 可追溯到完成记录</span></div>';
@@ -6550,15 +6650,15 @@
       supaSilentWrite('add', key, r);
       // v2a：新建记录时 Picker 勾选的主题落到真实 _id（links + events）
       try { if (typeof v2a_applyPendingNew === 'function') v2a_applyPendingNew(key, r); } catch(e){}
-      // 新建记录后，若属于主题来源表，立即自动生成主题+事件（Observatory 实时可见）
-      try { if (AUTO_TOPIC_SOURCE_TABLES.indexOf(key) >= 0) autoGenerateTopicsFromData(); } catch(e){}
+      // 候选主题推荐：未手动关联时，从正式主题库/预设名匹配并提示（不再自动建主题）
+      try { if (typeof v2a_suggestTopicForRecord === 'function') v2a_suggestTopicForRecord(key, r); } catch(e){}
       return Promise.resolve(r);
     },
     updateRecord: function(key, recordId, props) {
       if (USE_SDK) return SDK.updateRecord({ databaseId: NAMESPACE_IDS[key], recordId: recordId, properties: props }).then(function(){ storeState.lastSync = Date.now(); updateSyncState('synced'); }).catch(function(err){ queue.push({op:'update',key:key,recordId:recordId,props:props}); updateSyncState('error'); throw err; });
       var arr = storeState.tableRecords[key] || [];
       for (var i = 0; i < arr.length; i++) {
-        if (arr[i]._id === recordId) { arr[i] = Object.assign({}, arr[i], props, {_ts: Date.now()}); saveLocal(key); try { observeChange(key, recordId, 'update', arr[i]); } catch(e){}; supaSilentWrite('update', key, arr[i]); try { if (AUTO_TOPIC_SOURCE_TABLES.indexOf(key) >= 0) autoGenerateTopicsFromData(); } catch(e){}; return Promise.resolve(arr[i]); }
+        if (arr[i]._id === recordId) { arr[i] = Object.assign({}, arr[i], props, {_ts: Date.now()}); saveLocal(key); try { observeChange(key, recordId, 'update', arr[i]); } catch(e){}; supaSilentWrite('update', key, arr[i]); try { if (typeof v2a_suggestTopicForRecord === 'function') v2a_suggestTopicForRecord(key, arr[i]); } catch(e){}; return Promise.resolve(arr[i]); }
       }
       return Promise.reject(new Error('record not found'));
     },
@@ -7644,7 +7744,7 @@
 
   function openYearPlanModal(editRec) {
     var isEdit = !!editRec;
-    var rec = editRec || { '类型': '年度大目标', '开始': todayStr().slice(0,7)+'-01', '颜色':'紫', '状态':'进行中' };
+    var rec = editRec || { '开始': todayStr().slice(0,7)+'-01', '颜色':'紫', '状态':'进行中' };
     // 解析节点任务（关键节点 字段存 JSON 字符串）
     // 节点结构：{ name, deadline, subs: [{text, done}], pct? }
     // 兼容旧数据：旧节点可能只有 {name, pct, deadline}，自动包装成 subs:[]
@@ -7701,10 +7801,7 @@
       '<h3>' + SVG.year + ' ' + (isEdit ? '编辑' : '新增') + '年度计划</h3>' +
       '<form id="__ypForm" onsubmit="return false" style="overflow-y:auto;flex:1;min-height:0;padding-right:4px">' +
         '<div class="form-row"><label>计划名 *</label><input name="标题" value="' + escapeHTML(String(rec['标题'] || '')) + '" placeholder="如：雅思 7.0 / 完成《代码大全》" required></div>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
-          '<div class="form-row"><label>类型</label><select name="类型">' + ['年度大目标','OKR','习惯养成','读书','职业'].map(function(o){ return '<option' + (rec['类型']===o?' selected':'') + '>' + o + '</option>'; }).join('') + '</select></div>' +
-          '<div class="form-row"><label>状态</label><select name="状态">' + ['进行中','已完成','已搁置'].map(function(o){ return '<option' + (rec['状态']===o?' selected':'') + '>' + o + '</option>'; }).join('') + '</select></div>' +
-        '</div>' +
+        '<div class="form-row"><label>状态</label><select name="状态">' + ['进行中','已完成','已搁置'].map(function(o){ return '<option' + (rec['状态']===o?' selected':'') + '>' + o + '</option>'; }).join('') + '</select></div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
           '<div class="form-row"><label>开始</label><input type="date" name="开始" value="' + escapeHTML(String(rec['开始'] || '')) + '"></div>' +
           '<div class="form-row"><label>截止</label><input type="date" name="截止" value="' + escapeHTML(String(rec['截止'] || '')) + '"></div>' +
@@ -7803,7 +7900,6 @@
     document.getElementById('__ypSave').addEventListener('click', function(){
       var props = {
         '标题': form.elements['标题'].value.trim(),
-        '类型': form.elements['类型'].value,
         '状态': form.elements['状态'].value,
         '开始': form.elements['开始'].value,
         '截止': form.elements['截止'].value,
@@ -10125,8 +10221,6 @@
         });
       })).then(function(){
         updateSyncState('synced');
-        // 从真实数据自动生成主题 + 事件到主表（Observatory 数据源），幂等
-        try { autoGenerateTopicsFromData(); } catch(e){ console.error('auto topics err', e); }
         // 一次性把 v25 影子存储里的历史主题 + 已确认关联迁回主表
         try { v2a_backfillMainFromV25(); } catch(e){ console.error('backfill main err', e); }
         showView('dashboard');
@@ -10153,10 +10247,7 @@
       if (isFirstRun && !hasAnyData) {
         setTimeout(function(){ showOnboarding(); }, 600);
       }
-      // 从真实数据自动生成主题 + 事件到主表（Observatory 数据源），幂等
-      // 不再自动 seedTopics()（避免填充 12 个预设主题）
-      // 主题现在真正从真实数据自动产生；也可在 Observatory「导入预设」手动补充
-      try { autoGenerateTopicsFromData(); } catch(e){ console.error('auto topics err', e); }
+      // 主题不再自动从标题产生（方案第二节）；只能用户主动创建 / 确认推荐 / 合并，或 Observatory「导入预设」
       // 一次性把 v25 影子存储里的历史主题 + 已确认关联迁回主表
       try { v2a_backfillMainFromV25(); } catch(e){ console.error('backfill main err', e); }
       /* V6: 绑定 Observatory 入口 - 切到 obs 群组，sidebar 出现 */
