@@ -837,6 +837,29 @@
   .growth-view-toggle { display:inline-flex; gap:3px; padding:3px; border:1px solid var(--c-line-soft); border-radius:11px; background:rgba(255,255,255,.6); }
   .growth-map-wrap { min-height:420px; border-radius:16px; overflow:hidden; background:rgba(250,247,253,.82); border:1px solid rgba(180,156,224,.18); }
   .growth-map-wrap canvas { width:100%; height:420px; display:block; }
+  .growth-subsection { margin-top: 14px; }
+  .growth-subsection-title { font-size: 12px; color: #42364D; font-weight: 700; margin-bottom: 8px; }
+  .growth-weekly-bars { display: flex; align-items: flex-end; gap: 5px; padding: 0 2px; }
+  .growth-week-col { flex: 1; display: flex; flex-direction: column; align-items: center; }
+  .growth-week-track { height: 110px; width: 100%; display: flex; align-items: flex-end; justify-content: center; }
+  .growth-week-bar { width: 100%; max-width: 30px; min-height: 3px; border-radius: 5px 5px 1px 1px; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; background: #F0E9F7; cursor: pointer; transition: opacity .15s; }
+  .growth-week-bar:hover { opacity: .78; }
+  .growth-week-bar .gwk-primary { background: linear-gradient(180deg,#9C82D4,#8F70C6); }
+  .growth-week-bar .gwk-secondary { background: #D7C9EE; }
+  .growth-week-bar .gwk-zero { height: 100%; background: transparent; }
+  .growth-week-label { font-size: 10px; color: var(--c-muted); margin-top: 4px; white-space: nowrap; }
+  .growth-week-drill { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,.72); border: 1px solid rgba(180,156,224,.2); font-size: 11px; color: #5B4A7A; line-height: 1.7; }
+  .growth-week-drill .drill-row { display: flex; gap: 8px; align-items: baseline; }
+  .growth-week-drill .drill-tag { display: inline-block; min-width: 40px; font-weight: 650; color: #6E5B8C; }
+  .growth-path { display: flex; align-items: stretch; }
+  .growth-path-step { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; position: relative; padding: 0 4px; }
+  .growth-path-dot { width: 22px; height: 22px; border-radius: 50%; background: #EFE7F7; color: #B49CE0; display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+  .growth-path-step.done .growth-path-dot { background: var(--c-purple); color: #fff; }
+  .growth-path-label { font-size: 11px; color: #42364D; font-weight: 650; margin-top: 6px; }
+  .growth-path-step.done .growth-path-label { color: var(--c-purple-deep); }
+  .growth-path-evid { font-size: 10px; color: var(--c-muted); margin-top: 4px; line-height: 1.5; }
+  .growth-path-missing { font-size: 10px; color: #C4B9D4; margin-top: 4px; }
+  .growth-path-hint { font-size: 12px; color: var(--c-muted); line-height: 1.7; }
   @media (max-width: 860px) { .growth-grid,.growth-relationship-layout { grid-template-columns:1fr; } }
   @media (max-width: 560px) {
     .modal-basic-fields { grid-template-columns:1fr; }
@@ -4840,778 +4863,490 @@
     return ev;
   }
 
-  function obsFilterBarHTML() {
-    var timeOpts = ['30D','90D','YTD','All'];
-    var typeOpts = ['All','领域','聚焦','方法','工具'];
-    var srcOpts = ['All','Study','Work','Project','Reading','Review'];
-    function opts(name, list, cur) {
-      return '<select data-obs-filter="' + name + '" style="background:rgba(255,255,255,0.7);border:1px solid var(--c-line);border-radius:8px;padding:6px 10px;font-size:12px;color:var(--c-purple-deep);font-weight:600;font-family:inherit;cursor:pointer">' +
-        list.map(function(v){ return '<option value="' + v + '"' + (cur===v?' selected':'') + '>' + (name==='time'?(v==='30D'?'30 天':v==='90D'?'90 天':v==='YTD'?'年初至今':'全部'):name==='type'?(v==='All'?'全部类型':v):(v==='All'?'全部来源':v==='Study'?'学习':v==='Work'?'工作':v==='Project'?'项目':v==='Reading'?'阅读':'复盘')) + '</option>'; }).join('') +
-        '</select>';
+  /* ============================================================
+     V8 主题发展：可解释贡献聚合 + 近况首页 + 局部关系探索
+     ============================================================ */
+  function obsPeriodDays() {
+    return obsFilter.time === '7D' ? 7 : (obsFilter.time === '30D' ? 30 : (obsFilter.time === '90D' ? 90 : (obsFilter.time === 'YTD' ? 365 : 36500)));
+  }
+  function obsSourceLabel(table) {
+    return ({projects:'任务与项目',today_tasks:'日常任务',study_tasks:'学习任务',courses:'课程学习',study_checkins:'习惯打卡',study_habits:'学习习惯',study_notes:'笔记记录',media:'书影音',year_plan:'年度计划',weekly_reviews:'复盘记录',inbox:'Inbox'})[table] || table || '其他记录';
+  }
+  function obsRecordTitle(table, r) {
+    if (!r) return obsSourceLabel(table);
+    return r['标题'] || r['项目名'] || r['课程名'] || r['习惯名'] || r['内容'] || r['周'] || obsSourceLabel(table);
+  }
+  function obsFindSourceRecord(e) {
+    var table = e['来源表'];
+    var id = e['来源记录 ID'];
+    var rows = (storeState.tableRecords && storeState.tableRecords[table]) || [];
+    for (var i=0;i<rows.length;i++) if (rows[i]._id === id) return rows[i];
+    return null;
+  }
+  function obsEventIsRealized(e, rec) {
+    var table = e['来源表'];
+    if (table === 'study_checkins' || table === 'study_notes' || table === 'weekly_reviews') return true;
+    if (!rec) return ['E3 Synthesize','E5 Output','E6 Reuse'].indexOf(e['阶段']) >= 0;
+    if (table === 'projects' || table === 'year_plan') return rec['状态'] === '已完成';
+    if (table === 'courses') return rec['状态'] === '已学完';
+    if (table === 'media') return rec['状态'] === '已完结';
+    if (table === 'today_tasks' || table === 'study_tasks') return rec['状态'] === '已完成';
+    if (table === 'inbox') return rec['状态'] === '已处理' || rec['状态'] === '已归档';
+    return true;
+  }
+  // 统一贡献口径权重表（方案第四节）：贡献分 = 记录类型权重 × 主题角色权重 × 成果阶段权重
+  // 完成权重已由 obsEventIsRealized 的 0/1 过滤实现（未完成/进行中不计入）
+  var OBS_TYPE_WEIGHT = {
+    today_tasks: 1.0,    // 普通任务
+    study_tasks: 1.0,    // 学习任务
+    courses: 1.2,        // 课程阶段完成
+    study_notes: 1.0,    // 学习笔记
+    media: 1.0,          // 书影音完成
+    study_checkins: 0.5, // 习惯打卡
+    weekly_reviews: 1.0, // 复盘
+    inbox: 1.0           // Inbox
+  };
+  function obsContributionWeight(e, rec) {
+    var table = e['来源表'];
+    var typeW;
+    if (table === 'projects' || table === 'year_plan') {
+      // 项目/年度计划：成果 1.6（已完成），里程碑 1.4（进行中）
+      typeW = (rec && rec['状态'] === '已完成') ? 1.6 : 1.4;
+    } else {
+      typeW = OBS_TYPE_WEIGHT[table];
     }
-    return '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:12px 16px;background:rgba(255,255,255,0.7);border:1px solid var(--c-line);border-radius:14px;box-shadow:var(--shadow-soft);margin-bottom:14px">' +
-      '<span style="font-size:11px;color:var(--c-muted);text-transform:uppercase;letter-spacing:1.5px;font-weight:700">⏱ 时间</span>' + opts('time', timeOpts, obsFilter.time) +
-      '<span style="width:1px;height:18px;background:var(--c-line);margin:0 4px"></span>' +
-      '<span style="font-size:11px;color:var(--c-muted);text-transform:uppercase;letter-spacing:1.5px;font-weight:700">◆ 类型</span>' + opts('type', typeOpts, obsFilter.type) +
-      '<span style="width:1px;height:18px;background:var(--c-line);margin:0 4px"></span>' +
-      '<span style="font-size:11px;color:var(--c-muted);text-transform:uppercase;letter-spacing:1.5px;font-weight:700">▣ 来源</span>' + opts('source', srcOpts, obsFilter.source) +
-      '<span style="margin-left:auto;font-size:11px;color:var(--c-muted)">🔍 数字说明 · 鼠标悬停可看 tooltip</span>' +
-    '</div>';
+    if (typeW == null) typeW = 1.0;
+    var roleW = e['主题角色'] === 'secondary' ? 0.5 : 1.0; // 主要 1.0 / 同时涉及 0.5
+    var stageW = STAGE_WEIGHT[e['阶段']] || 1;              // 成果阶段（沿用 E1–E6）
+    return typeW * roleW * stageW;
   }
-  function bindFilterBar() {
-    if (!$obsModRoot) return;
-    Array.prototype.slice.call($obsModRoot.querySelectorAll('[data-obs-filter]')).forEach(function(sel){
-      sel.onchange = function() {
-        var n = sel.getAttribute('data-obs-filter');
-        obsFilter[n] = sel.value;
-        // 重新渲染当前页
-        var mod = currentMod;
-        var $c = document.getElementById('obsPageContent');
-        if ($c) {
-          if (mod === 'obs_universe') renderObsUniverse($c);
-          else if (mod === 'obs_evolution') renderObsEvolution($c);
-          else if (mod === 'obs_conversion') renderObsConversion($c);
-          else if (mod === 'obs_connections') renderObsConnections($c);
-        }
-      };
-    });
-  }
-
-  function obsPageHeader(title, sub) {
-    return '<div style="margin-bottom:16px;padding:16px 18px 14px;border-radius:16px;background:linear-gradient(135deg, rgba(255,255,255,0.82), rgba(253,234,242,0.55));border:1px solid rgba(255,255,255,0.65);box-shadow:0 4px 16px rgba(155,134,196,0.14);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);position:relative;overflow:hidden">' +
-      '<div style="position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,#B49CE0,#F2C6DC,#FFC78A)"></div>' +
-      '<h2 style="font-size:23px;font-weight:700;color:#4A3B63;margin:0;letter-spacing:0.5px;text-shadow:0 1px 2px rgba(255,255,255,0.9)">' + escapeHTML(title) + '</h2>' +
-      '<div style="font-size:14px;font-weight:600;color:#4A3B63;margin-top:6px;line-height:1.6;text-shadow:0 1px 3px rgba(255,255,255,1)">' + escapeHTML(sub) + '</div>' +
-    '</div>';
-  }
-
-  function obsInsightCard(label, value, sub, color) {
-    return '<div class="obs-insight" style="background:rgba(255,255,255,0.78);border:1px solid var(--c-line);border-radius:18px;padding:14px 16px;box-shadow:var(--shadow-soft);position:relative;overflow:hidden">' +
-      '<div style="position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,' + (color||'#B49CE0') + ',#F2C6DC)"></div>' +
-      '<div style="font-size:10px;color:var(--c-muted);text-transform:uppercase;letter-spacing:1.4px;font-weight:700">' + escapeHTML(label) + '</div>' +
-      '<div style="font-size:18px;font-weight:700;color:#3A2F4D;margin-top:4px;line-height:1.3;word-break:break-word">' + value + '</div>' +
-      (sub ? '<div style="font-size:11px;color:var(--c-muted);margin-top:2px;line-height:1.4">' + sub + '</div>' : '') +
-    '</div>';
-  }
-
-  function obsBridgeList() {
-    var bridges = findBridgeTopics();
-    return bridges.slice(0, 5).map(function(b) {
-      var t = topicById(b.topicId);
-      if (!t) return '';
-      return '<div class="legend-row"><span class="dot" style="background:#FFC78A"></span><strong>' + escapeHTML(t['主题名']) + '</strong><span style="margin-left:auto;color:var(--c-muted);font-size:11px">' + b.neighbors.length + ' 连接</span></div>';
-    }).join('');
-  }
-
-  function obsFastestGrowing() {
-    var topics = obsGetTopics();
-    if (!topics.length) return null;
-    var best = null, bestRatio = -999;
-    topics.forEach(function(t) {
-      var m = topicMomentum(t._id, 30);
-      var p = topicMomentum(t._id, 60) - m;
-      if (p > 0 && m > 0.5) {
-        var ratio = m / p;
-        if (ratio > bestRatio) { bestRatio = ratio; best = t; }
+  function aggregateTopicContributions(days, offsetDays) {
+    days = days || 30; offsetDays = offsetDays || 0;
+    var topics = obsGetTopics(), byId = {}, habitSeen = {}, habitDayCount = {};
+    // 习惯限制（方案第四节）：每天最多计一次；周期内最多计 N 天，表达持续性但不过度压过项目成果
+    var habitDayCap = ({7:3, 30:12, 90:30})[days] || 60;
+    topics.forEach(function(t){ byId[t._id] = {topicId:t._id,topic:t,period:days,score:0,previousPeriodScore:0,changeRate:0,completedRecordCount:0,activeDays:0,sourceBreakdown:{},roleBreakdown:{primary:0,secondary:0},recentRecords:[],_recordKeys:{},_days:{}}; });
+    topicEvents().forEach(function(e){
+      var tid=e['主题 ID'], item=byId[tid]; if(!item) return;
+      var age=ageInDays(e['日期']); if(age < offsetDays || age >= offsetDays + days) return;
+      var rec=obsFindSourceRecord(e); if(!obsEventIsRealized(e,rec)) return;
+      var table=e['来源表'], date=e['日期']||'', key=table+'|'+(e['来源记录 ID']||date);
+      if(table==='study_checkins') {
+        var hk=tid+'|'+date;
+        if(habitSeen[hk] || (habitDayCount[tid]||0) >= habitDayCap) return;
+        habitSeen[hk]=1; habitDayCount[tid]=(habitDayCount[tid]||0)+1;
+      }
+      var w=obsContributionWeight(e, rec); item.score+=w;
+      var source=obsSourceLabel(table); item.sourceBreakdown[source]=(item.sourceBreakdown[source]||0)+w;
+      var role=e['主题角色']==='secondary'?'secondary':'primary'; item.roleBreakdown[role]+=w;
+      item._days[date]=1;
+      if(!item._recordKeys[key]) {
+        item._recordKeys[key]=1; item.completedRecordCount++;
+        item.recentRecords.push({date:date,table:table,recordId:e['来源记录 ID']||'',title:obsRecordTitle(table,rec),stage:e['阶段'],role:role});
       }
     });
-    if (!best) {
-      // 没有 prev momentum，用 absolute 30d 最高
-      best = topics.slice().sort(function(a,b){return topicMomentum(b._id,30)-topicMomentum(a._id,30);})[0];
+    return Object.keys(byId).map(function(id){
+      var x=byId[id]; x.score=Math.round(x.score*10)/10; x.activeDays=Object.keys(x._days).length;
+      x.recentRecords.sort(function(a,b){return (b.date||'').localeCompare(a.date||'');});
+      delete x._recordKeys; delete x._days; return x;
+    }).filter(function(x){return x.score>0;}).sort(function(a,b){return b.score-a.score;});
+  }
+  function obsContributionModel() {
+    var days=obsPeriodDays(), cur=aggregateTopicContributions(days,0), prev=aggregateTopicContributions(days,days), prevMap={};
+    prev.forEach(function(x){prevMap[x.topicId]=x.score;});
+    cur.forEach(function(x){
+      x.previousPeriodScore=prevMap[x.topicId]||0;
+      x.changeRate=x.previousPeriodScore>0?Math.round((x.score-x.previousPeriodScore)/x.previousPeriodScore*100):(x.score>0?100:0);
+    });
+    return cur;
+  }
+  function obsContributionTimeline(items) {
+    var grouped={};
+    items.forEach(function(x){x.recentRecords.forEach(function(r){
+      var k=r.table+'|'+r.recordId+'|'+r.date;
+      if(!grouped[k]) grouped[k]={date:r.date,title:r.title,table:r.table,topics:[]};
+      if(grouped[k].topics.indexOf(x.topic['主题名'])<0) grouped[k].topics.push(x.topic['主题名']);
+    });});
+    return Object.keys(grouped).map(function(k){return grouped[k];}).sort(function(a,b){return (b.date||'').localeCompare(a.date||'');});
+  }
+  function obsEvidencePairs(days) {
+    var groups={}, topics={}; topicsList().forEach(function(t){topics[t._id]=t;});
+    topicEvents().forEach(function(e){
+      if(ageInDays(e['日期'])>=days) return;
+      var rec=obsFindSourceRecord(e); if(!obsEventIsRealized(e,rec)) return;
+      var key=e['来源表']+'|'+(e['来源记录 ID']||e['日期']);
+      if(!groups[key]) groups[key]={ids:[],records:[]};
+      if(groups[key].ids.indexOf(e['主题 ID'])<0) groups[key].ids.push(e['主题 ID']);
+      groups[key].records.push(obsRecordTitle(e['来源表'],rec));
+    });
+    var pairs={}; Object.keys(groups).forEach(function(k){var g=groups[k]; for(var i=0;i<g.ids.length;i++)for(var j=i+1;j<g.ids.length;j++){
+      var ids=[g.ids[i],g.ids[j]].sort(), pk=ids.join('|');
+      if(!pairs[pk]) pairs[pk]={a:topics[ids[0]],b:topics[ids[1]],count:0,records:[],last:''};
+      if(!pairs[pk].a||!pairs[pk].b) continue;
+      pairs[pk].count++; pairs[pk].records.push(g.records[0]);
+      var last=(groupedDateFromKey(k)||''); if(last>pairs[pk].last)pairs[pk].last=last;
+    }});
+    return Object.keys(pairs).map(function(k){return pairs[k];}).filter(function(p){return p.a&&p.b;}).sort(function(a,b){return b.count-a.count;});
+  }
+  function groupedDateFromKey(key) {
+    var table=key.split('|')[0], id=key.split('|')[1], rows=(storeState.tableRecords&&storeState.tableRecords[table])||[];
+    for(var i=0;i<rows.length;i++)if(rows[i]._id===id)return rows[i]['日期']||rows[i]['完结']||rows[i]['截止']||'';
+    return '';
+  }
+  function growthPeriodHTML() {
+    return '<div class="growth-period">'+['7D','30D','90D','All'].map(function(t){return '<button data-growth-period="'+t+'" class="'+(obsFilter.time===t?'on':'')+'">'+(t==='7D'?'7 天':t==='30D'?'30 天':t==='90D'?'90 天':'全部')+'</button>';}).join('')+'</div>';
+  }
+  function bindGrowthPeriod($c, rerender) {
+    Array.prototype.slice.call($c.querySelectorAll('[data-growth-period]')).forEach(function(b){b.onclick=function(){obsFilter.time=b.getAttribute('data-growth-period');rerender($c);};});
+  }
+  function obsParseLocalDate(dateStr) {
+    if (!dateStr) return null;
+    var m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return null;
+    return new Date(+m[1], +m[2]-1, +m[3]);
+  }
+  function obsWeekStartOf(date) {
+    var d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    var day = (d.getDay() + 6) % 7; // 周一=0
+    d.setDate(d.getDate() - day);
+    return d;
+  }
+  // 最近 N 周柱状图数据：单主题、每周 primary/secondary 拆分的已完成贡献分
+  function obsWeeklySeries(topicId, weeks) {
+    weeks = weeks || 12;
+    var events = topicEvents().filter(function(e){ return e['主题 ID'] === topicId; });
+    var today = new Date();
+    var thisMonday = obsWeekStartOf(today);
+    var buckets = [];
+    for (var i = 0; i < weeks; i++) {
+      var ws = new Date(thisMonday);
+      ws.setDate(ws.getDate() - (weeks - 1 - i) * 7);
+      var we = new Date(ws);
+      we.setDate(we.getDate() + 7);
+      buckets.push({ start: ws, end: we, primary: 0, secondary: 0, records: [] });
     }
-    return best;
-  }
-
-  function obsCoreTopic() {
-    var topics = obsGetTopics();
-    if (!topics.length) return null;
-    var best = null, bestScore = -1;
-    topics.forEach(function(t) {
-      var d = topicDepth(t._id).points;
-      var m = topicMomentum(t._id, 30);
-      var score = d + m * 5;
-      if (score > bestScore) { bestScore = score; best = t; }
+    events.forEach(function(e){
+      var rec = obsFindSourceRecord(e);
+      if (!obsEventIsRealized(e, rec)) return;
+      var d = obsParseLocalDate(e['日期']);
+      if (!d) return;
+      for (var i = 0; i < buckets.length; i++) {
+        if (d >= buckets[i].start && d < buckets[i].end) {
+          var w = obsContributionWeight(e, rec);
+          var role = e['主题角色'] === 'secondary' ? 'secondary' : 'primary';
+          if (role === 'primary') buckets[i].primary += w; else buckets[i].secondary += w;
+          buckets[i].records.push({ date: e['日期'], table: e['来源表'], title: obsRecordTitle(e['来源表'], rec), role: role, w: Math.round(w*10)/10 });
+          break;
+        }
+      }
     });
-    return best;
-  }
-
-  function obsMostActive() {
-    var topics = obsGetTopics();
-    if (!topics.length) return null;
-    return topics.slice().sort(function(a,b){ return topicMomentum(b._id,30) - topicMomentum(a._id,30); })[0];
-  }
-
-  function obsFastestGrowingDepth() {
-    var topics = obsGetTopics();
-    if (!topics.length) return null;
-    var best = null, bestDelta = -999;
-    topics.forEach(function(t) {
-      var d = topicDepth(t._id);
-      // 用 30d 内新增的 stage 数量估计
-      var recent = obsGetEvents().filter(function(e){
-        return e['主题 ID']===t._id && ageInDays(e['日期']) <= 30;
-      });
-      var old = obsGetEvents().filter(function(e){
-        return e['主题 ID']===t._id && ageInDays(e['日期']) > 30 && ageInDays(e['日期']) <= 90;
-      });
-      var delta = recent.length - old.length / 2;
-      if (delta > bestDelta) { bestDelta = delta; best = t; }
-    });
-    return best;
-  }
-
-  function obsRevivingOrDormant() {
-    var topics = obsGetTopics();
-    if (!topics.length) return null;
-    var reviving = null, dormant = null;
-    var bestR = -1, bestD = 9999;
-    topics.forEach(function(t) {
-      var s = topicStatus(t._id);
-      var m = topicMomentum(t._id, 30);
-      if (s === 'Reviving' && m > bestR) { bestR = m; reviving = t; }
-      if (s === 'Dormant' && m < bestD) { bestD = m; dormant = t; }
-    });
-    return {reviving: reviving, dormant: dormant};
-  }
-
-  function obsStrongestConversion() {
-    var topics = obsGetTopics();
-    if (!topics.length) return null;
-    var best = null, bestScore = -1;
-    topics.forEach(function(t) {
-      var f = topicFunnel(t._id);
-      var outputs = f['E5 Output'] + f['E6 Reuse'];
-      var inputs = f['E1 Explore'] + f['E2 Learn'];
-      if (inputs === 0) return;
-      var score = outputs / inputs + outputs * 0.5;
-      if (score > bestScore) { bestScore = score; best = t; }
-    });
-    return best;
-  }
-
-  function obsMostInputHeavy() {
-    var topics = obsGetTopics();
-    if (!topics.length) return null;
-    return topics.slice().sort(function(a,b){
-      return (topicFunnel(b._id)['E1 Explore'] + topicFunnel(b._id)['E2 Learn'])
-           - (topicFunnel(a._id)['E1 Explore'] + topicFunnel(a._id)['E2 Learn']);
-    })[0];
-  }
-
-  function obsMostReused() {
-    var topics = obsGetTopics();
-    if (!topics.length) return null;
-    return topics.slice().sort(function(a,b){
-      return topicFunnel(b._id)['E6 Reuse'] - topicFunnel(a._id)['E6 Reuse'];
-    })[0];
-  }
-
-  function obsTopicLabel(t) {
-    if (!t) return '—';
-    var s = topicStatus(t._id);
-    return '<strong style="color:' + STATUS_COLOR[s] + '">' + escapeHTML(t['主题名']) + '</strong>' +
-      ' <span style="font-size:11px;color:var(--c-muted)">' + STATUS_LABEL[s] + ' · ' + topicDepth(t._id).frontier + '</span>';
-  }
-
-  /* ============================================================
-     V6 4 个子页面 render
-     ============================================================ */
-  function renderV6NetworkCanvas() {
-    var canvas = document.getElementById('obsNetwork');
-    if (!canvas) return;
-    var ctx = canvas.getContext('2d');
-    var dpr = window.devicePixelRatio || 1;
-    var w = canvas.clientWidth;
-    var h = canvas.clientHeight || 420;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, w, h);
-    // 背景：紫粉渐变 + 散点
-    var grad = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, Math.max(w,h)/1.5);
-    grad.addColorStop(0, '#FDFBFF');
-    grad.addColorStop(1, '#F0E6F8');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
-    for (var i=0;i<80;i++) {
-      ctx.fillStyle = 'rgba(180,156,224,' + (0.08 + Math.random()*0.18) + ')';
-      ctx.beginPath();
-      ctx.arc(Math.random()*w, Math.random()*h, 0.8 + Math.random()*1.4, 0, Math.PI*2);
-      ctx.fill();
-    }
-
-    var topics = obsGetTopics();
-    if (!topics.length) return;
-
-    // 计算节点位置
-    var nodes = topics.map(function(t, i) {
-      var d = topicDepth(t._id);
-      var m = topicMomentum(t._id, 30);
-      var s = topicStatus(t._id);
-      var radius = 10 + Math.max(0, d.frontierIdx) * 4 + Math.min(m * 1.2, 14);
-      // 安全边距：每节点至少 r+8 离边缘
-      var safe = 30;
+    return buckets.map(function(b){
       return {
-        id: t._id, name: t['主题名'], status: s, color: STATUS_COLOR[s] || '#B49CE0',
-        r: radius, m: m, type: t['类型'],
-        // 初始按类型 cluster
-        x: w/2, y: h/2, vx: 0, vy: 0
+        start: b.start,
+        label: (b.start.getMonth()+1)+'/'+b.start.getDate(),
+        primary: Math.round(b.primary*10)/10,
+        secondary: Math.round(b.secondary*10)/10,
+        total: Math.round((b.primary+b.secondary)*10)/10,
+        records: b.records
       };
     });
-    // 按类型分组 cluster
-    var typePos = {
-      '领域':  {x: 0.30, y: 0.30},
-      '聚焦':  {x: 0.70, y: 0.30},
-      '方法':  {x: 0.30, y: 0.70},
-      '工具':  {x: 0.70, y: 0.70}
-    };
-    nodes.forEach(function(n) {
-      var t = topics.find(function(x){return x._id===n.id;});
-      var pos = typePos[t['类型']] || {x: 0.5, y: 0.5};
-      n.x = pos.x * w + (Math.random() - 0.5) * 50;
-      n.y = pos.y * h + (Math.random() - 0.5) * 50;
-    });
-
-    // 计算边
-    var edges = [];
-    var bridges = findBridgeTopics();
-    var bridgeSet = {};
-    bridges.forEach(function(b){ bridgeSet[b.topicId] = true; });
-    for (var i=0;i<nodes.length;i++) {
-      for (var j=i+1;j<nodes.length;j++) {
-        var a = topicAssociation(nodes[i].id, nodes[j].id);
-        if (a > 0.05) {
-          var emerging = isEmergingConnection(nodes[i].id, nodes[j].id);
-          edges.push({a: nodes[i], b: nodes[j], w: a, emerging: emerging});
+  }
+  // 成长路径四步：接触→学习→实践→产出（再次使用并入产出），每步带真实证据
+  function obsGrowthPath(topicId) {
+    var STAGE_GROUP = [
+      { label: '接触', stages: ['E1 Explore'] },
+      { label: '学习', stages: ['E2 Learn','E3 Synthesize'] },
+      { label: '实践', stages: ['E4 Apply'] },
+      { label: '产出', stages: ['E5 Output','E6 Reuse'] }
+    ];
+    var events = topicEvents().filter(function(e){ return e['主题 ID'] === topicId; });
+    var steps = STAGE_GROUP.map(function(g){ return { label: g.label, stages: g.stages, count: 0, evidence: [] }; });
+    events.forEach(function(e){
+      var rec = obsFindSourceRecord(e);
+      if (!obsEventIsRealized(e, rec)) return;
+      for (var i = 0; i < steps.length; i++) {
+        if (steps[i].stages.indexOf(e['阶段']) >= 0) {
+          steps[i].count++;
+          steps[i].evidence.push({ date: e['日期']||'', title: obsRecordTitle(e['来源表'], rec), stage: e['阶段'] });
+          break;
         }
       }
-    }
-    // 简化的 force-directed (200 步)
-    function force() {
-      for (var it=0;it<200;it++) {
-        // 排斥
-        for (var i=0;i<nodes.length;i++) {
-          for (var j=i+1;j<nodes.length;j++) {
-            var dx = nodes[j].x - nodes[i].x;
-            var dy = nodes[j].y - nodes[i].y;
-            var d = Math.sqrt(dx*dx+dy*dy) || 1;
-            var f = (nodes[i].r + nodes[j].r + 6) / d * 0.5;
-            nodes[i].vx -= dx / d * f;
-            nodes[j].vx += dx / d * f;
-            nodes[i].vy -= dy / d * f;
-            nodes[j].vy += dy / d * f;
-          }
-        }
-        // 引力
-        edges.forEach(function(e){
-          var dx = e.b.x - e.a.x;
-          var dy = e.b.y - e.a.y;
-          var d = Math.sqrt(dx*dx+dy*dy) || 1;
-          var f = d * 0.0005 * e.w * 8;
-          e.a.vx += dx / d * f;
-          e.a.vy += dy / d * f;
-          e.b.vx -= dx / d * f;
-          e.b.vy -= dy / d * f;
-        });
-        // 中心拉 + 类型 cluster 拉
-        nodes.forEach(function(n){
-          var pos = typePos[topics.find(function(x){return x._id===n.id;})['类型']];
-          if (pos) {
-            n.vx += (pos.x*w - n.x) * 0.003;
-            n.vy += (pos.y*h - n.y) * 0.003;
-          }
-          n.vx *= 0.6; n.vy *= 0.6;
-        });
-        nodes.forEach(function(n){
-          n.x += n.vx; n.y += n.vy;
-          // 安全边距
-          var minX = n.r + 8, maxX = w - n.r - 8;
-          var minY = n.r + 8, maxY = h - n.r - 8;
-          n.x = Math.max(minX, Math.min(maxX, n.x));
-          n.y = Math.max(minY, Math.min(maxY, n.y));
-        });
-      }
-    }
-    force();
-
-    // 画边
-    edges.forEach(function(e) {
-      if (e.emerging) {
-        ctx.strokeStyle = 'rgba(255,137,168,0.7)';
-        ctx.lineWidth = Math.max(1.5, e.w * 5);
-        ctx.setLineDash([4, 3]);
-      } else {
-        ctx.strokeStyle = 'rgba(155,134,196,' + Math.min(0.6, e.w*2.5) + ')';
-        ctx.lineWidth = Math.max(1, e.w * 5);
-        ctx.setLineDash([]);
-      }
-      ctx.beginPath();
-      ctx.moveTo(e.a.x, e.a.y);
-      ctx.lineTo(e.b.x, e.b.y);
-      ctx.stroke();
-      // Emerging 边末端加 ✦
-      if (e.emerging) {
-        ctx.setLineDash([]);
-        ctx.fillStyle = 'rgba(255,137,168,0.9)';
-        ctx.font = '11px sans-serif';
-        ctx.textAlign = 'center';
-        var mx = (e.a.x + e.b.x) / 2;
-        var my = (e.a.y + e.b.y) / 2;
-        ctx.fillText('✦', mx, my);
-      }
     });
-    ctx.setLineDash([]);
-
-    // 画节点
-    nodes.forEach(function(n) {
-      // 节点本体
-      var isBridge = bridgeSet[n.id];
-      if (isBridge) {
-        // Bridge 特殊外圈
-        ctx.strokeStyle = '#FFC78A';
-        ctx.lineWidth = 3;
-        ctx.setLineDash([3, 2]);
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, n.r + 8, 0, Math.PI*2);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-      // Status ring
-      ctx.fillStyle = n.color;
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, n.r + 3, 0, Math.PI*2);
-      ctx.fill();
-      // 内部 radial gradient
-      var gradN = ctx.createRadialGradient(n.x - n.r/3, n.y - n.r/3, 1, n.x, n.y, n.r);
-      gradN.addColorStop(0, 'rgba(255,255,255,0.95)');
-      gradN.addColorStop(0.6, n.color);
-      gradN.addColorStop(1, 'rgba(110,91,140,0.6)');
-      ctx.fillStyle = gradN;
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, n.r, 0, Math.PI*2);
-      ctx.fill();
-      // Label
-      ctx.fillStyle = '#3A2F4D';
-      ctx.font = '600 12px -apple-system, sans-serif';
-      ctx.textAlign = 'center';
-      var label = n.name;
-      if (label.length > 16) label = label.slice(0,15) + '…';
-      ctx.fillText(label, n.x, n.y + n.r + 16);
-      // Bridge 标识
-      if (isBridge) {
-        ctx.fillStyle = '#FFC78A';
-        ctx.font = '600 9px -apple-system, sans-serif';
-        ctx.fillText('🌉', n.x + n.r + 6, n.y - n.r - 2);
-      }
+    steps.forEach(function(s){
+      var seen = {};
+      s.evidence = s.evidence.filter(function(ev){ var k = ev.title+'|'+ev.date; if (seen[k]) return false; seen[k]=1; return true; });
+      s.evidence.sort(function(a,b){ return (b.date||'').localeCompare(a.date||''); });
     });
-
-    // Hover tooltip + click
-    var tooltip = document.createElement('div');
-    tooltip.id = 'obsNetTooltip';
-    tooltip.style.cssText = 'position:absolute;background:rgba(58,47,77,0.95);color:#fff;padding:10px 12px;border-radius:10px;font-size:12px;line-height:1.5;pointer-events:none;display:none;z-index:999;box-shadow:0 4px 20px rgba(0,0,0,0.2);max-width:240px';
-    document.body.appendChild(tooltip);
-    canvas.onmousemove = function(e) {
-      var rect = canvas.getBoundingClientRect();
-      var cx = (e.clientX - rect.left) * (w / rect.width);
-      var cy = (e.clientY - rect.top) * (h / rect.height);
-      var hit = nodes.find(function(n){
-        var dx = n.x - cx, dy = n.y - cy;
-        return Math.sqrt(dx*dx+dy*dy) <= n.r + 4;
-      });
-      if (hit) {
-        var t = topicById(hit.id);
-        var d = topicDepth(hit.id);
-        var m = topicMomentum(hit.id, 30);
-        var recentCount = obsGetEvents().filter(function(e){return e['主题 ID']===hit.id;}).slice(0,3).length;
-        var recent = obsGetEvents().filter(function(e){return e['主题 ID']===hit.id;}).sort(function(a,b){return (b['日期']||'').localeCompare(a['日期']||'');}).slice(0,2);
-        var recentText = recent.length ? recent.map(function(e){return e['来源表'] + '·' + e['阶段'];}).join(' · ') : '最近无活动';
-        tooltip.innerHTML = '<strong style="font-size:13px">' + escapeHTML(t['主题名']) + '</strong><br>' +
-          '<span style="color:#B49CE0">◆ ' + (t['类型']||'—') + ' · ' + topicStatus(hit.id) + '</span><br>' +
-          'Depth · ' + d.frontier + ' (' + d.points + ' pts)<br>' +
-          'Momentum 30d: ' + m.toFixed(1) + '<br>' +
-          '<span style="color:#FFC78A">最近：' + recentText + '</span>';
-        tooltip.style.left = (e.clientX + 12) + 'px';
-        tooltip.style.top  = (e.clientY + 12) + 'px';
-        tooltip.style.display = 'block';
-        canvas.style.cursor = 'pointer';
-      } else {
-        tooltip.style.display = 'none';
-        canvas.style.cursor = 'default';
-      }
-    };
-    canvas.onmouseleave = function() { tooltip.style.display = 'none'; };
-    canvas.onclick = function(e) {
-      var rect = canvas.getBoundingClientRect();
-      var cx = (e.clientX - rect.left) * (w / rect.width);
-      var cy = (e.clientY - rect.top) * (h / rect.height);
-      var hit = nodes.find(function(n){
-        var dx = n.x - cx, dy = n.y - cy;
-        return Math.sqrt(dx*dx+dy*dy) <= n.r + 4;
-      });
-      if (hit) {
-        window.location.hash = '#obs/topic/' + hit.id;
-      }
-    };
+    var activeSteps = steps.filter(function(s){ return s.count > 0; });
+    return { steps: steps, activeCount: activeSteps.length, firstActive: activeSteps[0] || null };
   }
-
-  function renderObsEvolution($c) {
-    var topics = obsGetTopics();
-    if (!topics.length) {
-      $c.innerHTML = obsPageHeader('Evolution｜主题演化', '最近我的注意力和成长方向去了哪里') +
-        obsFilterBarHTML() +
-        '<div class="empty" style="padding:60px;text-align:center;background:rgba(255,255,255,0.6);border-radius:18px">还没有主题</div>';
-      return;
+  function renderGrowthWeeklyChart(series) {
+    var max = 0;
+    series.forEach(function(w){ max = Math.max(max, w.total); });
+    if (max <= 0) {
+      return '<div class="growth-subsection"><div class="growth-subsection-title">最近 12 周</div><div class="growth-path-hint">再积累一周完成记录后，这里会显示变化趋势。</div></div>';
     }
-    var most = obsMostActive();
-    var fastest = obsFastestGrowingDepth();
-    var rev = obsRevivingOrDormant();
-    var chartMode = obsCtx.chartMode || 'Attention';
-
-    var html = obsPageHeader('Evolution｜主题演化', '最近我的注意力和成长方向去了哪里 · Attention=关注度 · Depth=深度') +
-      obsFilterBarHTML() +
-      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px">' +
-        obsInsightCard('Most Active', obsTopicLabel(most), most ? '30d momentum: ' + topicMomentum(most._id, 30).toFixed(1) : '') +
-        obsInsightCard('Fastest Growing', obsTopicLabel(fastest), fastest ? '最近新增活动最多' : '') +
-        obsInsightCard('Reviving / Dormant',
-          (function(){
-            if (rev.reviving) return '<span style="color:#F2C6DC">✦ ' + escapeHTML(rev.reviving['主题名']) + '</span>';
-            if (rev.dormant) return '<span style="color:#9EBFE8">🌙 ' + escapeHTML(rev.dormant['主题名']) + '</span>';
-            return '—';
-          })(),
-          rev.reviving ? '最近重获 momentum' : (rev.dormant ? '近期 momentum 偏低' : '暂无特殊状态')) +
-      '</div>' +
-      // Top 5 + toggle
-      '<div style="background:linear-gradient(160deg, rgba(255,255,255,0.75), rgba(247,240,251,0.45));border:1px solid rgba(255,255,255,0.65);border-radius:20px;padding:16px;box-shadow:0 6px 24px rgba(155,134,196,0.14);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);margin-bottom:16px">' +
-        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">' +
-          '<h4 style="font-size:13px;color:#4A3B63;text-transform:uppercase;letter-spacing:1.4px;margin:0;font-weight:800">Top 5 Topic · 13 周趋势</h4>' +
-          '<div style="display:flex;gap:8px;align-items:center">' +
-            '<div style="display:flex;background:rgba(255,255,255,0.8);border:1px solid var(--c-line);border-radius:999px;padding:3px">' +
-              '<button data-chart-mode="Attention" class="obs-mode-btn" style="border:0;background:' + (chartMode==='Attention'?'linear-gradient(135deg,#F2C6DC,#FFC78A)':'transparent') + ';color:' + (chartMode==='Attention'?'#fff':'var(--c-muted)') + ';font-size:11px;padding:4px 10px;border-radius:999px;cursor:pointer;font-weight:600">Attention</button>' +
-              '<button data-chart-mode="Depth" class="obs-mode-btn" style="border:0;background:' + (chartMode==='Depth'?'linear-gradient(135deg,#B49CE0,#9C82D4)':'transparent') + ';color:' + (chartMode==='Depth'?'#fff':'var(--c-muted)') + ';font-size:11px;padding:4px 10px;border-radius:999px;cursor:pointer;font-weight:600">Depth</button>' +
-            '</div>' +
-            '<div style="display:flex;background:rgba(255,255,255,0.8);border:1px solid var(--c-line);border-radius:999px;padding:3px">' +
-              ['30D','90D','YTD','All'].map(function(t){ return '<button data-time-range="' + t + '" class="obs-time-btn" style="border:0;background:' + (obsFilter.time===t?'var(--c-purple)':'transparent') + ';color:' + (obsFilter.time===t?'#fff':'var(--c-muted)') + ';font-size:11px;padding:4px 10px;border-radius:999px;cursor:pointer;font-weight:600">' + (t==='30D'?'30D':t==='90D'?'90D':t==='YTD'?'YTD':'All') + '</button>'; }).join('') +
-            '</div>' +
-          '</div>' +
-        '</div>' +
-        '<canvas id="obsEvolutionCanvas" width="1100" height="380" style="width:100%;height:auto;display:block;border-radius:12px;background:#FDFBFF"></canvas>' +
-        '<div id="obsEvolutionLegend" style="display:flex;flex-wrap:wrap;gap:12px;margin-top:10px"></div>' +
-      '</div>' +
-      // Stage Progression
-      '<div class="card" style="background:linear-gradient(160deg, rgba(255,255,255,0.75), rgba(247,240,251,0.45));border:1px solid rgba(255,255,255,0.65);border-radius:20px;box-shadow:0 6px 24px rgba(155,134,196,0.14);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);margin-top:16px"><div class="topbar"></div><h4 style="font-size:13px;color:#6E5B8C;text-transform:uppercase;letter-spacing:1.4px;margin:0 0 10px;font-weight:700">Stage Progression · 紧凑</h4><div id="obsStageProgression"></div></div>';
-    $c.innerHTML = html;
-    bindFilterBar();
-    // bind mode buttons
-    Array.prototype.slice.call($c.querySelectorAll('[data-chart-mode]')).forEach(function(btn){
-      btn.onclick = function() { obsCtx.chartMode = btn.getAttribute('data-chart-mode'); renderObsEvolution($c); };
-    });
-    Array.prototype.slice.call($c.querySelectorAll('[data-time-range]')).forEach(function(btn){
-      btn.onclick = function() { obsFilter.time = btn.getAttribute('data-time-range'); renderObsEvolution($c); };
-    });
-    renderV6EvolutionChart();
-    renderV6StageProgression();
-  }
-
-  function renderV6EvolutionChart() {
-    var canvas = document.getElementById('obsEvolutionCanvas');
-    if (!canvas) return;
-    var ctx = canvas.getContext('2d');
-    var dpr = window.devicePixelRatio || 1;
-    var w = canvas.clientWidth;
-    var h = canvas.clientHeight || 380;
-    canvas.width = w * dpr; canvas.height = h * dpr;
-    ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, w, h);
-    // 浅底
-    var bg = ctx.createLinearGradient(0, 0, 0, h);
-    bg.addColorStop(0, '#FDFBFF');
-    bg.addColorStop(1, '#F7F0FB');
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, w, h);
-
-    var mode = obsCtx.chartMode || 'Attention';
-    var timeRange = obsFilter.time || '30D';
-    var weeks = timeRange === '30D' ? 5 : (timeRange === '90D' ? 13 : 26);
-    if (timeRange === 'All') weeks = 26;
-    var dayMs = 7*86400000;
-    var nowMs = Date.now();
-
-    var topics = obsGetTopics().slice().sort(function(a,b){
-      return topicMomentum(b._id,30) - topicMomentum(a._id,30);
-    }).slice(0, 5);
-
-    if (!topics.length) {
-      ctx.fillStyle = '#8977A6';
-      ctx.font = '13px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('没有 Topic', w/2, h/2);
-      return;
-    }
-
-    // 收集 series
-    var padL = 40, padR = 16, padT = 16, padB = 30;
-    var plotW = w - padL - padR;
-    var plotH = h - padT - padB;
-    var stepX = plotW / weeks;
-
-    var topicSeries = topics.map(function(t) {
-      var s = topicStatus(t._id);
-      return {
-        name: t['主题名'],
-        color: STATUS_COLOR[s] || '#B49CE0',
-        vals: []
-      };
-    });
-    for (var w2=0; w2<weeks; w2++) {
-      var slotStart = nowMs - (weeks - 1 - w2) * dayMs;
-      var slotEnd = slotStart + dayMs;
-      topics.forEach(function(t, i) {
-        var v = 0;
-        topicEvents().forEach(function(e){
-          if (e['主题 ID'] !== t._id) return;
-          var ms = new Date(e['日期']).getTime();
-          if (isNaN(ms) || ms < slotStart || ms >= slotEnd) return;
-          var share = parseFloat(e['主题权重']) || 1;
-          if (mode === 'Attention') v += share;
-          else {
-            var stw = STAGE_WEIGHT[e['阶段']] || 1;
-            v += share * stw;
-          }
-        });
-        topicSeries[i].vals.push(v);
-      });
-    }
-    var maxTotal = 0;
-    for (var s_i=0; s_i<topicSeries.length; s_i++) {
-      for (var s_j=0; s_j<topicSeries[s_i].vals.length; s_j++) {
-        var absval = Math.abs(topicSeries[s_i].vals[s_j]);
-        if (absval > maxTotal) maxTotal = absval;
-      }
-    }
-    if (maxTotal === 0) maxTotal = 1;
-    // 堆叠面积
-    var stack = []; for (var k=0;k<weeks;k++) stack[k] = 0;
-    topicSeries.forEach(function(s) {
-      ctx.fillStyle = s.color;
-      ctx.globalAlpha = 0.85;
-      ctx.strokeStyle = s.color;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      var started = false;
-      for (var j=0; j<weeks; j++) {
-        var x = padL + (j + 0.5) * stepX;
-        var top = padT + plotH - (stack[j] + s.vals[j]) / maxTotal * plotH;
-        var bot = padT + plotH - stack[j] / maxTotal * plotH;
-        if (!started) { ctx.moveTo(x, top); started = true; }
-        else ctx.lineTo(x, top);
-        ctx.lineTo(x, bot);
-      }
-      for (var j2=weeks-1; j2>=0; j2--) {
-        var x2 = padL + (j2 + 0.5) * stepX;
-        var bot2 = padT + plotH - stack[j2] / maxTotal * plotH;
-        ctx.lineTo(x2, bot2);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      for (var k2=0;k2<weeks;k2++) stack[k2] += s.vals[k2];
-    });
-    // x 轴 labels
-    ctx.fillStyle = 'rgba(110,91,140,0.6)';
-    ctx.font = '10px sans-serif';
-    ctx.textAlign = 'center';
-    var labelStep = Math.max(1, Math.floor(weeks / 6));
-    for (var k3=0; k3<weeks; k3++) {
-      if (k3 % labelStep === 0 || k3 === weeks-1) {
-        var xx = padL + (k3 + 0.5) * stepX;
-        var wk = (k3 - (weeks-1));
-        ctx.fillText('w' + wk, xx, h - 8);
-      }
-    }
-    // y 轴 label
-    ctx.save();
-    ctx.translate(12, h/2);
-    ctx.rotate(-Math.PI/2);
-    ctx.fillStyle = 'rgba(110,91,140,0.6)';
-    ctx.font = '10px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(mode === 'Attention' ? 'Attention Score' : 'Depth Score', 0, 0);
-    ctx.restore();
-
-    // legend
-    var legendEl = document.getElementById('obsEvolutionLegend');
-    if (legendEl) {
-      legendEl.innerHTML = topicSeries.map(function(s){
-        return '<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--c-text)"><span style="width:14px;height:14px;border-radius:3px;background:' + s.color + '"></span>' + escapeHTML(s.name) + '</div>';
-      }).join('');
-    }
-  }
-
-  function renderV6StageProgression() {
-    var el = document.getElementById('obsStageProgression');
-    if (!el) return;
-    var topics = obsGetTopics();
-    if (!topics.length) { el.innerHTML = '<div class="empty">还没有主题</div>'; return; }
-    var html = '<div style="display:flex;flex-direction:column;gap:4px">';
-    topics.forEach(function(t) {
-      var d = topicDepth(t._id);
-      var s = topicStatus(t._id);
-      html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0">' +
-        '<span style="width:10px;height:10px;border-radius:50%;background:' + STATUS_COLOR[s] + '"></span>' +
-        '<span style="min-width:140px;font-size:13px;font-weight:600">' + escapeHTML(t['主题名']) + '</span>' +
-        '<div style="flex:1;display:flex;gap:2px;height:14px">' +
-          STAGE_ORDER.map(function(st, i){
-            var cnt = d.counts[st].raw;
-            var fill = i<=d.frontierIdx && cnt > 0;
-            var fillStyle = fill ? 'background:' + STATUS_COLOR[s] + ';opacity:0.85' : 'background:#EFE6F5';
-            return '<div style="flex:1;' + fillStyle + ';border-radius:3px" title="' + st + ': ' + cnt + '"></div>';
-          }).join('') +
-        '</div>' +
-        '<span style="min-width:80px;font-size:11px;color:var(--c-muted);text-align:right">' + d.frontier.split(' ')[0] + '</span>' +
+    var bars = series.map(function(w, idx){
+      var has = w.total > 0;
+      var ph = has ? Math.max(4, Math.round(w.primary / max * 100)) : 0;
+      var sh = has ? Math.max(2, Math.round(w.secondary / max * 100)) : 0;
+      return '<div class="growth-week-col" data-week-idx="'+idx+'">'+
+        '<div class="growth-week-track"><div class="growth-week-bar" style="height:'+Math.max(3, Math.round(w.total/max*100))+'%" title="'+escapeHTML(w.label+' · 共 '+w.total+' 分')+'">'+
+          (has ? '<span class="gwk-primary" style="height:'+ph+'%"></span><span class="gwk-secondary" style="height:'+sh+'%"></span>' : '<span class="gwk-zero"></span>')+
+        '</div></div>'+
+        '<span class="growth-week-label">'+w.label+'</span>'+
       '</div>';
-    });
-    html += '</div>';
-    el.innerHTML = html;
-  }
-
-  function renderObsConversion($c) {
-    var topics = obsGetTopics();
-    if (!topics.length) {
-      $c.innerHTML = obsPageHeader('Conversion｜知识转化', '哪些知识真正从输入变成了产出') +
-        obsFilterBarHTML() +
-        renderTrueConversionFunnel() +
-        renderLineageSection() +
-        renderGovEntry() +
-        '<div class="empty" style="padding:60px;text-align:center;background:rgba(255,255,255,0.6);border-radius:18px">还没有主题</div>';
-      return;
-    }
-    var strong = obsStrongestConversion();
-    var input = obsMostInputHeavy();
-    var reused = obsMostReused();
-    var sel = obsCtx.selTopicId || (strong ? strong._id : topics[0]._id);
-    var selTopic = topicById(sel);
-    var html = obsPageHeader('Conversion｜知识转化', '哪些知识真正从输入变成了产出 · Explore→Learn→Synthesize→Apply→Output→Reuse') +
-      obsFilterBarHTML() +
-      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px">' +
-        obsInsightCard('Strongest Conversion', obsTopicLabel(strong), strong ? 'Output/Reuse 比最高' : '') +
-        obsInsightCard('Most Input-heavy', obsTopicLabel(input), input ? 'Explore+Learn 最多' : '') +
-        obsInsightCard('Most Reused', obsTopicLabel(reused), reused ? 'E6 Reuse 最多' : '') +
-      '</div>';
-    // Topic dropdown
-    var options = topics.map(function(t){
-      return '<option value="' + t._id + '"' + (t._id===sel?' selected':'') + '>' + escapeHTML(t['主题名']) + '</option>';
     }).join('');
-    html += '<div style="background:linear-gradient(160deg, rgba(255,255,255,0.75), rgba(247,240,251,0.45));border:1px solid rgba(255,255,255,0.65);border-radius:20px;padding:18px;box-shadow:0 6px 24px rgba(155,134,196,0.14);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);margin-bottom:16px">' +
-      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' +
-        '<div style="font-size:11px;color:var(--c-muted);text-transform:uppercase;letter-spacing:1.4px;font-weight:700">查看 Topic：</div>' +
-        '<select id="obsConvTopic" style="background:rgba(255,255,255,0.95);border:1px solid var(--c-line);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--c-purple-deep);font-weight:600;font-family:inherit;cursor:pointer;flex:1;max-width:340px">' + options + '</select>' +
-        '<button id="obsConvGlobal" class="btn btn-ghost" style="height:32px;font-size:12px">查看全局</button>' +
-      '</div>' +
-      '<div id="obsConvFunnelBody"></div>' +
-      '</div>';
-    // Lineage
-    html += '<div class="card" style="background:linear-gradient(160deg, rgba(255,255,255,0.75), rgba(247,240,251,0.45));border:1px solid rgba(255,255,255,0.65);border-radius:20px;box-shadow:0 6px 24px rgba(155,134,196,0.14);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)"><div class="topbar"></div><h4 style="font-size:13px;color:#6E5B8C;text-transform:uppercase;letter-spacing:1.4px;margin:0 0 8px;font-weight:700">Knowledge Lineage · 知识血缘</h4><div id="obsConvLineage"></div></div>';
-    $c.innerHTML = html;
-    // 追加 True Conversion + AI Recommend + Governance 入口
-    var $tc = document.createElement('div');
-    $tc.innerHTML = renderTrueConversionFunnel(sel) + renderLineageSection() + renderGovEntry();
-    while ($tc.firstChild) $c.appendChild($tc.firstChild);
-    bindFilterBar();
-    // bind dropdown
-    var $sel = document.getElementById('obsConvTopic');
-    if ($sel) $sel.onchange = function() { obsCtx.selTopicId = $sel.value; renderObsConversion($c); };
-    var $g = document.getElementById('obsConvGlobal');
-    if ($g) $g.onclick = function() { obsCtx.selTopicId = null; renderObsConversion($c); };
-    renderV6Funnel(sel);
-    renderV6Lineage(sel);
+    return '<div class="growth-subsection"><div class="growth-subsection-title">最近 12 周</div><div style="display:flex;align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><div class="growth-weekly-bars">'+bars+'</div></div><div style="flex:0 0 auto;font-size:10px;color:var(--c-muted);line-height:1.7"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#8F70C6;margin-right:4px"></span>主要贡献<br><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#D7C9EE;margin-right:4px"></span>同时涉及</div></div><div class="growth-week-drill" id="growthWeekDrill" style="display:none"></div></div>';
   }
-
-  function renderV6Funnel(selId) {
-    var el = document.getElementById('obsConvFunnelBody');
-    if (!el) return;
-    var counts = selId ? topicFunnel(selId) : topicFunnel(null);
-    var sel = selId ? topicById(selId) : null;
-    var titleText = sel ? sel['主题名'] + ' · Funnel' : '全局 · Funnel';
-    var total = STAGE_ORDER.reduce(function(s,st){ return s + (counts[st] || 0); }, 0);
-    if (total === 0) {
-      el.innerHTML = '<div class="empty">还没有数据 · 录入内容后会浮现 Funnel</div>';
-      return;
+  function renderGrowthPath(path) {
+    if (path.activeCount < 2) {
+      var hint;
+      if (path.activeCount === 0) hint = '还没有可追溯的完成记录。完成任务、课程或习惯打卡后，这里会显示成长路径。';
+      else if (path.firstActive) hint = '当前主要处于「'+path.firstActive.label+'」阶段，还没有发现实践或成果记录。';
+      else hint = '数据不足，暂不判断成长路径。';
+      return '<div class="growth-subsection"><div class="growth-subsection-title">成长路径</div><div class="growth-path-hint">'+hint+'</div></div>';
     }
-    var html = '<h5 style="font-size:13px;font-weight:700;color:var(--c-purple-deep);margin:0 0 10px">' + escapeHTML(titleText) + '</h5>';
-    html += '<div style="display:flex;flex-direction:column;gap:6px">';
-    var prev = total;
-    STAGE_ORDER.forEach(function(st, i) {
-      var c = counts[st] || 0;
-      var ratio = total > 0 ? (c / total) : 0;
-      var conv = prev > 0 ? (c / prev) : 0;
-      var color = i===0?'#F2C6DC':i===1?'#B49CE0':i===2?'#9C82D4':i===3?'#7FC8A9':i===4?'#FFC78A':'#6E5B8C';
-      var w = Math.max(2, ratio * 100);
-      html += '<div style="display:flex;align-items:center;gap:10px">' +
-        '<span style="min-width:120px;font-size:12px;font-weight:600">' + st + '</span>' +
-        '<div style="flex:1;height:24px;border-radius:6px;background:rgba(245,240,250,0.6);position:relative;overflow:hidden">' +
-        '<div style="position:absolute;left:0;top:0;bottom:0;width:' + w + '%;background:' + color + ';opacity:0.9;border-radius:6px"></div>' +
-        '<span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:11px;color:#fff;font-weight:700;mix-blend-mode:difference">' + c + '</span>' +
-        '</div>' +
-        '<span style="min-width:50px;font-size:11px;color:var(--c-muted);text-align:right">' + (ratio*100).toFixed(0) + '%</span>' +
-        '</div>';
-      prev = c;
-    });
-    html += '</div>';
-    el.innerHTML = html;
-  }
-
-  function renderV6Lineage(selId) {
-    var el = document.getElementById('obsConvLineage');
-    if (!el) return;
-    var ev = obsGetEvents().filter(function(e){
-      return selId ? e['主题 ID'] === selId : true;
-    });
-    // Lineage 简化：按 source_table 聚类，按时间排序
-    if (ev.length < 3) {
-      el.innerHTML = '<div style="background:#FFF7E8;border:1px dashed #FFC78A;border-radius:10px;padding:14px;font-size:13px;color:#6E5B8C">⚠ 尚未形成足够的知识血缘数据 · 当前 <strong>' + ev.length + '</strong> 条主题事件 · Activity Funnel 已替代展示</div>';
-      return;
-    }
-    var bySource = {};
-    ev.forEach(function(e) {
-      if (!bySource[e['来源表']]) bySource[e['来源表']] = [];
-      bySource[e['来源表']].push(e);
-    });
-    var html = '<div style="font-size:11px;color:var(--c-muted);margin-bottom:8px">从最早的输入到最近产出 · 共 ' + ev.length + ' 条</div>';
-    var sourceMap = {
-      'media':        {label:'📖 Reading',        color:'#B49CE0', icon:'📖'},
-      'courses':      {label:'🎓 Course',         color:'#9C82D4', icon:'🎓'},
-      'inbox':        {label:'📥 Inbox',          color:'#FFC78A', icon:'📥'},
-      'weekly_reviews':{label:'📊 Review',        color:'#7FC8A9', icon:'📊'},
-      'projects':     {label:'💼 Project',        color:'#FF89A8', icon:'💼'},
-      'study_notes':  {label:'✍ Note',            color:'#6E5B8C', icon:'✍'},
-      'habit_logs':   {label:'🔁 Habit',           color:'#F2C6DC', icon:'🔁'}
-    };
-    var ordered = ['media','courses','study_notes','inbox','projects','weekly_reviews','habit_logs'];
-    ordered.forEach(function(src) {
-      if (!bySource[src]) return;
-      var info = sourceMap[src] || {label: src, color: '#B49CE0', icon: '•'};
-      var items = bySource[src].slice(0, 4);
-      html += '<div style="margin-bottom:10px;display:flex;align-items:flex-start;gap:8px">' +
-        '<div style="min-width:90px;padding:4px 10px;border-radius:8px;background:' + info.color + ';color:#fff;font-size:11px;font-weight:700;flex-shrink:0">' + info.icon + ' ' + info.label + '</div>' +
-        '<div style="flex:1;font-size:12px;line-height:1.6">' +
-          items.map(function(e) {
-            var t = topicById(e['主题 ID']);
-            return '<div style="padding:2px 0"><span style="color:var(--c-muted);font-size:10px">' + (e['日期'] || '') + '</span> · ' + escapeHTML(t ? t['主题名'] : '?') + ' · <span style="color:' + info.color + '">' + e['阶段'] + '</span></div>';
-          }).join('') +
-        '</div>' +
+    var steps = path.steps.map(function(s){
+      var done = s.count > 0;
+      var ev = s.evidence.slice(0,3).map(function(e){ return escapeHTML(e.title); }).join(' · ');
+      return '<div class="growth-path-step'+(done?' done':'')+'"><div class="growth-path-dot">'+(done?'✓':'')+'</div><div class="growth-path-label">'+s.label+'</div>'+
+        (done ? '<div class="growth-path-evid">'+ev+'</div>' : '<div class="growth-path-missing">暂无记录</div>')+
       '</div>';
+    }).join('');
+    return '<div class="growth-subsection"><div class="growth-subsection-title">成长路径</div><div class="growth-path">'+steps+'</div></div>';
+  }
+  function renderGrowthDetail(item,maxScore) {
+    var sources=Object.keys(item.sourceBreakdown).sort(function(a,b){return item.sourceBreakdown[b]-item.sourceBreakdown[a];});
+    var series = obsWeeklySeries(item.topicId, 12);
+    var path = obsGrowthPath(item.topicId);
+    return '<div class="growth-detail"><div class="growth-detail-title"><strong>'+escapeHTML(item.topic['主题名'])+' · '+item.score.toFixed(1)+' 分</strong><button class="growth-link-btn" data-open-rel="'+escapeHTML(item.topicId)+'">查看关系</button></div>'+
+      '<div style="font-size:11px;color:var(--c-muted);margin-bottom:7px">主要贡献 '+item.roleBreakdown.primary.toFixed(1)+' · 同时涉及 '+item.roleBreakdown.secondary.toFixed(1)+' · '+item.completedRecordCount+' 条完成记录 · 活跃 '+item.activeDays+' 天'+(item.previousPeriodScore>0?' · 较上期 '+(item.changeRate>=0?'↑':'↓')+Math.abs(item.changeRate)+'%':item.changeRate>0?' · 本期新增':'')+'</div>'+
+      sources.map(function(s){var v=item.sourceBreakdown[s];return '<div class="growth-source-row"><span>'+escapeHTML(s)+'</span><div class="growth-mini-bar"><i style="width:'+Math.max(4,v/item.score*100)+'%"></i></div><b>'+v.toFixed(1)+'</b></div>';}).join('')+
+      renderGrowthWeeklyChart(series)+
+      renderGrowthPath(path)+
+      (item.recentRecords.length?'<div style="margin-top:10px;font-size:11px;color:var(--c-muted)">最近：'+item.recentRecords.slice(0,3).map(function(r){return escapeHTML(r.title);}).join(' · ')+'</div>':'')+'</div>';
+  }
+  function renderObsUniverse($c) {
+    var items=obsContributionModel(), timeline=obsContributionTimeline(items), days=obsPeriodDays(), pairs=obsEvidencePairs(days), topics=obsGetTopics();
+    var completed={}; timeline.forEach(function(r){completed[r.table+'|'+r.title]=1;});
+    var activeDays={}; items.forEach(function(x){x.recentRecords.forEach(function(r){if(r.date)activeDays[r.date]=1;});});
+    var totalScore=items.reduce(function(s,x){return s+x.score;},0), maxScore=items.length?items[0].score:1;
+    var selected=obsCtx.growthSelected|| (items[0]&&items[0].topicId); obsCtx.growthSelected=selected;
+    var selectedItem=items.filter(function(x){return x.topicId===selected;})[0];
+    var html='<div class="growth-shell"><section class="growth-hero"><div class="growth-hero-row"><div><h2>主题发展</h2><p>把最近完成的事，沉淀为持续成长的主题。</p></div>'+growthPeriodHTML()+'</div>'+
+      '<div class="growth-kpis"><div class="growth-kpi"><b>'+Object.keys(completed).length+'</b><span>本期完成记录</span></div><div class="growth-kpi"><b>'+items.length+'</b><span>活跃主题</span></div><div class="growth-kpi"><b>'+Object.keys(activeDays).length+'</b><span>有积累的天数</span></div></div></section>';
+    if(!topics.length) {
+      html+='<section class="growth-panel growth-empty"><strong style="display:block;color:#42364D;margin-bottom:7px">还没有正式主题</strong>你可以在创建记录时选择主题，也可以稍后统一整理。</section></div>';
+      $c.innerHTML=html; bindGrowthPeriod($c,renderObsUniverse); return;
+    }
+    html+='<div class="growth-grid"><section class="growth-panel"><div class="growth-section-head"><h3>主题贡献排行</h3><span>加权贡献 · 可追溯到完成记录</span></div>';
+    if(!items.length) html+='<div class="growth-empty">这个周期还没有已完成的主题记录。完成任务、项目节点或习惯打卡后，这里会开始积累。</div>';
+    else items.slice(0,8).forEach(function(x,idx){html+='<div class="growth-topic-row" data-growth-topic="'+escapeHTML(x.topicId)+'"><span class="growth-rank">'+(idx+1)+'</span><span class="growth-topic-name">'+escapeHTML(x.topic['主题名'])+'</span><span class="growth-bar"><i style="width:'+Math.max(5,x.score/maxScore*100)+'%"></i></span><span class="growth-score">'+x.score.toFixed(1)+'</span><span class="growth-delta '+(x.changeRate>=0?'up':'down')+'">'+(x.changeRate>=0?'↑':'↓')+Math.abs(x.changeRate)+'%</span></div>';});
+    if(selectedItem) html+=renderGrowthDetail(selectedItem,maxScore);
+    html+='</section><aside><section class="growth-panel"><div class="growth-section-head"><h3>最近完成了什么</h3><span>最近 '+Math.min(8,timeline.length)+' 条</span></div><div class="growth-timeline">';
+    if(!timeline.length) html+='<div class="growth-empty">暂无已完成记录</div>'; else timeline.slice(0,8).forEach(function(r){html+='<div class="growth-timeline-row"><span class="growth-timeline-date">'+escapeHTML((r.date||'').slice(5)||'—')+'</span><div class="growth-timeline-main"><strong>'+escapeHTML(r.title)+'</strong><small>'+escapeHTML(obsSourceLabel(r.table))+'</small></div><span class="growth-topic-chip">'+escapeHTML(r.topics[0]||'主题')+(r.topics.length>1?' +'+(r.topics.length-1):'')+'</span></div>';});
+    html+='</div></section><section class="growth-panel" style="margin-top:14px"><div class="growth-section-head"><h3>下一步值得探索什么</h3><span>基于共同完成记录</span></div>';
+    var opportunities=pairs.filter(function(p){return p.count>=2;}).slice(0,3);
+    if(!opportunities.length) html+='<div class="growth-empty">数据不足。至少需要两个主题在两条已完成记录中共同出现，才会形成探索建议。</div>'; else opportunities.forEach(function(p){html+='<div class="growth-opportunity"><strong>'+escapeHTML(p.a['主题名'])+' × '+escapeHTML(p.b['主题名'])+'</strong><p>它们已在 '+p.count+' 条完成记录中共同出现。可以尝试把这组方法用于一个小项目，并观察是否更高效。</p></div>';});
+    html+='</section></aside></div></div>';
+    $c.innerHTML=html; bindGrowthPeriod($c,renderObsUniverse);
+    Array.prototype.slice.call($c.querySelectorAll('[data-growth-topic]')).forEach(function(row){row.onclick=function(){obsCtx.growthSelected=row.getAttribute('data-growth-topic');renderObsUniverse($c);};});
+    Array.prototype.slice.call($c.querySelectorAll('[data-open-rel]')).forEach(function(b){b.onclick=function(){obsCtx.focusTopicId=b.getAttribute('data-open-rel');currentMod='obs_connections';renderSubBar();renderMod();};});
+    // 12 周柱状图：点击柱子展开该周贡献来源
+    var weeklySeries = selectedItem ? obsWeeklySeries(selectedItem.topicId, 12) : [];
+    Array.prototype.slice.call($c.querySelectorAll('[data-week-idx]')).forEach(function(col){
+      col.onclick = function() {
+        var idx = parseInt(col.getAttribute('data-week-idx'), 10);
+        var w = weeklySeries[idx];
+        var drill = document.getElementById('growthWeekDrill');
+        if (!drill || !w) return;
+        if (!w.records.length) { drill.style.display = 'none'; return; }
+        var rows = w.records.map(function(r){
+          return '<div class="drill-row"><span class="drill-tag">'+(r.role==='primary'?'主要':'涉及')+'</span><span style="flex:1">'+escapeHTML(r.title)+'</span><span>'+r.w.toFixed(1)+' 分</span></div>';
+        }).join('');
+        drill.innerHTML = '<div style="font-weight:650;margin-bottom:5px">'+w.label+' · 共 '+w.total+' 分</div>'+rows;
+        drill.style.display = 'block';
+      };
     });
-    el.innerHTML = html;
+  }
+  function renderObsConnections($c) {
+    var items=obsContributionModel(), topics=obsGetTopics(), pairs=obsEvidencePairs(obsPeriodDays());
+    var focusId=obsCtx.focusTopicId || (items[0]&&items[0].topicId) || (topics[0]&&topics[0]._id); obsCtx.focusTopicId=focusId;
+    var focus=topicById(focusId), related=pairs.filter(function(p){return p.a._id===focusId||p.b._id===focusId;}).slice(0,8), mode=obsCtx.relationshipMode||'map';
+    var html='<div class="growth-shell"><section class="growth-hero"><div class="growth-hero-row"><div><h2>关系探索</h2><p>先看真实共现证据，再决定是否值得发展成新的方向。</p></div>'+growthPeriodHTML()+'</div></section>'+
+      '<section class="growth-panel"><div class="growth-section-head"><div><h3>'+(focus?escapeHTML(focus['主题名']):'选择一个主题')+' 的局部关系</h3><span>仅显示一至二跳邻居，避免全量星图噪声</span></div><div class="growth-view-toggle"><button data-rel-mode="map" class="'+(mode==='map'?'on':'')+'">主题地图</button><button data-rel-mode="list" class="'+(mode==='list'?'on':'')+'">列表视图</button></div></div>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'+topics.slice(0,20).map(function(t){return '<button class="growth-link-btn" data-focus-topic="'+escapeHTML(t._id)+'" style="'+(t._id===focusId?'background:var(--c-purple);color:#fff':'')+'">'+escapeHTML(t['主题名'])+'</button>';}).join('')+'</div>';
+    if(!focus) html+='<div class="growth-empty">还没有主题</div>'; else if(mode==='map') html+='<div class="growth-relationship-layout"><div class="growth-map-wrap"><canvas id="growthRelationshipCanvas" width="900" height="420"></canvas></div><div id="growthRelationshipDetail"></div></div>'; else {
+      html+='<div>'; if(!related.length) html+='<div class="growth-empty">这个周期还没有可验证的主题联系。</div>'; related.forEach(function(p){var other=p.a._id===focusId?p.b:p.a;html+='<div class="growth-topic-row" data-focus-topic="'+escapeHTML(other._id)+'"><span class="growth-rank">'+p.count+'</span><span class="growth-topic-name" style="width:180px">'+escapeHTML(other['主题名'])+'</span><span style="flex:1;color:var(--c-muted);font-size:12px">共同完成 '+p.count+' 条 · '+escapeHTML((p.records||[]).slice(0,2).join('、'))+'</span><button class="growth-link-btn">查看</button></div>';}); html+='</div>';
+    }
+    html+='</section><section class="growth-panel"><div class="growth-section-head"><h3>发展建议</h3><span>证据 + 小型尝试</span></div>';
+    var best=related.filter(function(p){return p.count>=2;})[0];
+    if(!best) html+='<div class="growth-empty">数据不足，暂不生成方向建议。继续记录并完成真实工作后再回来看看。</div>'; else {var other=best.a._id===focusId?best.b:best.a, conf=Math.min(95,45+best.count*12);html+='<div class="growth-opportunity"><strong>'+escapeHTML(focus['主题名'])+' × '+escapeHTML(other['主题名'])+'</strong><p><b>推荐原因：</b>两者已在 '+best.count+' 条完成记录中共同出现。</p><p><b>支撑记录：</b>'+escapeHTML(best.records.slice(0,3).join('、'))+'</p><p><b>置信度：</b>'+conf+'% · <b>小型尝试：</b>用这两个主题共同完成一个 1–2 周的小项目，并在结束后复盘效率。</p><div style="margin-top:9px"><button class="growth-link-btn" data-suggestion-feedback="helpful">有帮助</button> <button class="growth-link-btn" data-suggestion-feedback="irrelevant">不相关</button></div></div>';}
+    html+='</section></div>';
+    $c.innerHTML=html; bindGrowthPeriod($c,renderObsConnections);
+    Array.prototype.slice.call($c.querySelectorAll('[data-rel-mode]')).forEach(function(b){b.onclick=function(){obsCtx.relationshipMode=b.getAttribute('data-rel-mode');renderObsConnections($c);};});
+    Array.prototype.slice.call($c.querySelectorAll('[data-focus-topic]')).forEach(function(b){b.onclick=function(){obsCtx.focusTopicId=b.getAttribute('data-focus-topic');renderObsConnections($c);};});
+    Array.prototype.slice.call($c.querySelectorAll('[data-suggestion-feedback]')).forEach(function(b){b.onclick=function(){toast(b.getAttribute('data-suggestion-feedback')==='helpful'?'已记录：这条建议有帮助':'已记录：减少类似建议','success');};});
+    if(mode==='map'&&focus) renderGrowthRelationshipCanvas(focus,related,items);
+  }
+  function renderGrowthRelationshipCanvas(focus, related, items) {
+    var canvas=document.getElementById('growthRelationshipCanvas'); if(!canvas)return; var ctx=canvas.getContext('2d'),dpr=window.devicePixelRatio||1,w=canvas.clientWidth,h=420;canvas.width=w*dpr;canvas.height=h*dpr;ctx.scale(dpr,dpr);ctx.clearRect(0,0,w,h);
+    var scoreMap={};items.forEach(function(x){scoreMap[x.topicId]=x;}); var nodes=[],cx=w/2,cy=h/2; nodes.push({id:focus._id,name:focus['主题名'],x:cx,y:cy,r:34,focus:true});
+    related.forEach(function(p,i){var t=p.a._id===focus._id?p.b:p.a,ang=-Math.PI/2+i*Math.PI*2/Math.max(related.length,1),r=145;nodes.push({id:t._id,name:t['主题名'],x:cx+Math.cos(ang)*r,y:cy+Math.sin(ang)*r,r:18+Math.min(12,(scoreMap[t._id]&&scoreMap[t._id].score)||0),count:p.count});});
+    related.forEach(function(p,i){var n=nodes[i+1];ctx.strokeStyle='rgba(125,96,190,'+Math.min(.75,.18+p.count*.12)+')';ctx.lineWidth=Math.min(9,1+p.count*1.4);ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(n.x,n.y);ctx.stroke();ctx.fillStyle='#6E5B8C';ctx.font='11px sans-serif';ctx.textAlign='center';ctx.fillText(String(p.count),cx+(n.x-cx)*.55,cy+(n.y-cy)*.55-4);});
+    nodes.forEach(function(n){var item=scoreMap[n.id],delta=item?item.changeRate:0;ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,Math.PI*2);ctx.fillStyle=n.focus?'#8F70C6':(delta>0?'#B49CE0':'#D7CAE9');ctx.shadowColor='rgba(110,91,140,.22)';ctx.shadowBlur=12;ctx.fill();ctx.shadowBlur=0;ctx.fillStyle=n.focus?'#fff':'#42364D';ctx.font=(n.focus?'700 13px':'600 11px')+' sans-serif';ctx.textAlign='center';var label=n.name.length>12?n.name.slice(0,11)+'…':n.name;ctx.fillText(label,n.x,n.y+4);});
+    obsCtx.focusNodes=nodes; canvas.onclick=function(ev){var r=canvas.getBoundingClientRect(),x=ev.clientX-r.left,y=ev.clientY-r.top,hit=null;nodes.forEach(function(n){if(Math.hypot(x-n.x,y-n.y)<=n.r+6)hit=n;});if(hit&&hit.id!==focus._id){obsCtx.focusTopicId=hit.id;renderObsConnections(document.getElementById('obsPageContent'));}};
+    var detail=document.getElementById('growthRelationshipDetail'),fi=scoreMap[focus._id],top=related[0];detail.innerHTML='<div class="growth-detail" style="margin:0;height:100%"><div class="growth-detail-title"><strong>'+escapeHTML(focus['主题名'])+'</strong></div><p style="font-size:12px;color:var(--c-muted);line-height:1.6">节点大小代表本期贡献，颜色深浅代表近期变化，连线粗细代表共同完成记录数。</p><div class="growth-kpi"><b>'+((fi&&fi.score)||0).toFixed(1)+'</b><span>本期贡献分</span></div>'+(top?'<div class="growth-opportunity" style="margin-top:10px"><strong>最常共同出现</strong><p>'+escapeHTML((top.a._id===focus._id?top.b:top.a)['主题名'])+' · '+top.count+' 条共同记录</p></div>':'<div class="growth-empty">暂无关系证据</div>')+'</div>';
   }
 
   /* ============================================================
-     V6 主路由：sidebar 中 obs 4 子模块 + 群组视图
+     待整理主题 UI（合并 / 保留 / 移除）
      ============================================================ */
-  /* ============================================================
-     V7 DATA GOVERNANCE + KNOWLEDGE LINEAGE
-     - 5 Tab Modal: Topics / Definitions / Review / Health / Methodology
-     - AI Recommend Lineage + True Conversion
-     ============================================================ */
+  function obsFormalTopics(excludeId) {
+    return topicsList().filter(function(t){
+      return !t._auto && t._id !== excludeId && t['治理状态'] !== 'archived' && t['治理状态'] !== 'merged';
+    });
+  }
+  function obsRenderTidyPanel() {
+    var cands = obsListTidyTopics();
+    if (!cands.length) {
+      return '<div style="text-align:center;padding:32px 12px;color:var(--c-muted)">没有待整理主题。标题型自动主题已全部处理完毕 ✓</div>';
+    }
+    var formal = obsFormalTopics(null);
+    var html = '<p style="font-size:12px;color:var(--c-muted);line-height:1.6;margin:0 0 14px">以下是早期从记录标题自动生成的主题（已停止自动生成）。请逐一决定：<b>合并</b>到正式主题（避免重复）、<b>保留</b>为长期方向，或<b>移除</b>（不影响原始记录）。</p>';
+    cands.forEach(function(t){
+      var stats = obsTidyStats(t._id);
+      var src = stats.sourceTitles.slice(0, 3).map(function(s){ return escapeHTML(s); }).join('、');
+      html += '<div class="v2a-prp-card" style="border-color:#FFC9BF">'+
+        '<div class="v2a-prp-row1"><div class="v2a-prp-topic">'+escapeHTML(t['主题名'])+'</div><span class="v2a-badge" style="background:#FFE8E3;color:#E0644F">自动生成</span></div>'+
+        '<div class="v2a-prp-row2"><span class="v2a-prp-rec">'+stats.eventCount+' 条事件'+(src?' · 来源：'+src:'')+'</span></div>'+
+        '<div class="v2a-prp-actions">'+
+          '<button class="v2a-btn v2a-btn-edit" data-tidy-act="toggle-merge" data-tidy-id="'+escapeHTML(t._id)+'">⇄ 合并</button>'+
+          '<button class="v2a-btn v2a-btn-confirm" data-tidy-act="keep" data-tidy-id="'+escapeHTML(t._id)+'">✓ 保留</button>'+
+          '<button class="v2a-btn v2a-btn-reject" data-tidy-act="remove" data-tidy-id="'+escapeHTML(t._id)+'">✗ 移除</button>'+
+        '</div>'+
+        '<div id="__tidyMerge_'+escapeHTML(t._id)+'" style="display:none;margin-top:10px;padding:10px;background:rgba(255,255,255,0.6);border:1px solid var(--c-line);border-radius:10px">'+
+          '<div style="font-size:12px;color:#6E5B8C;margin-bottom:6px">合并到：</div>'+
+          '<select id="__tidySel_'+escapeHTML(t._id)+'" style="width:100%;padding:7px 9px;border:1px solid var(--c-line);border-radius:8px;font-size:13px;font-family:inherit;margin-bottom:6px">'+
+            (formal.length ? formal.map(function(f){ return '<option value="'+escapeHTML(f._id)+'">'+escapeHTML(f['主题名'])+'</option>'; }).join('') : '<option value="">（暂无正式主题，请在下方输入新主题名）</option>')+
+          '</select>'+
+          '<input id="__tidyInput_'+escapeHTML(t._id)+'" placeholder="或输入新主题名，回车/点确认" style="width:100%;padding:7px 9px;border:1px solid var(--c-line);border-radius:8px;font-size:13px;font-family:inherit;margin-bottom:8px">'+
+          '<button class="v2a-btn v2a-btn-confirm" data-tidy-act="confirm-merge" data-tidy-id="'+escapeHTML(t._id)+'">确认合并</button>'+
+        '</div>'+
+      '</div>';
+    });
+    return html;
+  }
+  function obsOpenTidyModal() {
+    var html = '<div class="modal-bg" id="__tidyBg">'+
+      '<div class="modal" style="max-width:680px;max-height:80vh;overflow-y:auto">'+
+        '<div class="topbar"></div>'+
+        '<h3>🧹 待整理主题</h3>'+
+        '<div id="__tidyBody">' + obsRenderTidyPanel() + '</div>'+
+        '<div class="form-actions">'+
+          '<button type="button" class="btn btn-ghost" id="__tidyClose">关闭</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+    $modalRoot.innerHTML = html;
+    var bg = document.getElementById('__tidyBg');
+    document.getElementById('__tidyClose').addEventListener('click', function(){ $modalRoot.innerHTML = ''; });
+    var body = document.getElementById('__tidyBody');
+    body.addEventListener('click', function(ev){
+      var t = ev.target;
+      while (t && t !== body) {
+        var act = t.getAttribute && t.getAttribute('data-tidy-act');
+        if (act) {
+          var tid = t.getAttribute('data-tidy-id');
+          var topic = topicById(tid);
+          var name = topic ? topic['主题名'] : '';
+          if (act === 'keep') {
+            var r = obsTidyKeep(tid);
+            if (r.ok) { toast('已保留主题「'+name+'」', 'success'); body.innerHTML = obsRenderTidyPanel(); refreshTidyToolbar(); }
+            else toast('操作失败：'+(r.error||''), 'danger');
+          } else if (act === 'remove') {
+            confirmDialog('移除主题「'+name+'」及其事件（原始记录不受影响），确定？', { title:'移除主题', okText:'移除', danger:true })
+              .then(function(ok){ if(!ok) return; var r = obsTidyRemove(tid); if (r.ok) { toast('已移除主题「'+name+'」', 'success'); body.innerHTML = obsRenderTidyPanel(); refreshTidyToolbar(); } });
+          } else if (act === 'toggle-merge') {
+            var box = document.getElementById('__tidyMerge_'+tid);
+            if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
+          } else if (act === 'confirm-merge') {
+            var sel = document.getElementById('__tidySel_'+tid);
+            var inp = document.getElementById('__tidyInput_'+tid);
+            var newName = inp ? inp.value.trim() : '';
+            var targetId = sel && sel.value ? sel.value : '';
+            if (newName) {
+              // 输入新主题名：先创建正式主题，再合并
+              var existing = findTopicByName(newName);
+              if (existing && existing._id !== tid) { targetId = existing._id; doMerge(tid, targetId); }
+              else if (existing && existing._id === tid) { toast('新主题名不能与源主题同名', 'danger'); }
+              else {
+                Store.addRecord('topics', { '主题名': newName, '别名': '', '类型': topic ? topic['类型'] : '领域', '说明': '合并时创建', '创建时间': todayStr(), '治理状态': 'active', '分析状态': 'Developing' })
+                  .then(function(nr){ doMerge(tid, nr._id); })
+                  .catch(function(err){ toast('创建失败：'+(err&&err.message||err), 'danger'); });
+              }
+            } else if (targetId) {
+              doMerge(tid, targetId);
+            } else {
+              toast('请选择目标主题或输入新主题名', 'danger');
+            }
+          }
+          return;
+        }
+        t = t.parentNode;
+      }
+    });
+    function doMerge(sourceId, targetId) {
+      var topic = topicById(sourceId);
+      var tname = topic ? topic['主题名'] : '';
+      var target = topicById(targetId);
+      var gname = target ? target['主题名'] : '';
+      confirmDialog('把「'+tname+'」合并到「'+gname+'」？其事件和关联会迁移到目标，源主题删除（原始记录保留）。', { title:'合并主题', okText:'合并', danger:true })
+        .then(function(ok){
+          if(!ok) return;
+          var r = obsTidyMerge(sourceId, targetId);
+          if (r.ok) { toast('已合并，迁移 '+r.migrated+' 条事件', 'success'); body.innerHTML = obsRenderTidyPanel(); refreshTidyToolbar(); }
+          else toast('合并失败：'+(r.error||''), 'danger');
+        });
+    }
+  }
+  function refreshTidyToolbar() {
+    var btn = document.getElementById('__v2aOpenTidy');
+    if (!btn) return;
+    var n = 0; try { n = obsListTidyTopics().length; } catch(e){}
+    btn.innerHTML = '待整理主题' + (n > 0 ? ' <span style="background:#FF9A8B;color:#fff;padding:1px 6px;border-radius:8px;margin-left:4px">' + n + '</span>' : '');
+  }
+
+  function renderObservatoryShell() {
+    var mod = currentMod;
+    $obsModRoot = document.getElementById('obsModRoot');
+    if ($obsModRoot) {
+      $obsModRoot.style.display = 'block';
+      var pendingCount = 0;
+      try { pendingCount = v2a_listLinks({ review_status: 'pending' }).length; } catch(e) {}
+      var tidyCount = 0;
+      try { tidyCount = obsListTidyTopics().length; } catch(e) {}
+      $obsModRoot.innerHTML =
+        '<div id="v2aObsToolbar" style="display:flex;justify-content:space-between;align-items:center;padding:9px 16px;background:linear-gradient(90deg,#FDEAF2,#F7F2FB);border-bottom:1px solid #E8DEF8">'+
+          '<div style="font-size:12px;color:#6E5B8C;font-weight:600">主题数据 · 本地优先</div>'+
+          '<div style="display:flex;gap:8px">'+
+            '<button class="v2a-btn v2a-btn-edit" id="__v2aOpenTidy">待整理主题' + (tidyCount > 0 ? ' <span style="background:#FF9A8B;color:#fff;padding:1px 6px;border-radius:8px;margin-left:4px">' + tidyCount + '</span>' : '') + '</button>'+
+            '<button class="v2a-btn v2a-btn-edit" id="__v2aOpenPrp">待确认关联' + (pendingCount > 0 ? ' <span style="background:#FFC78A;color:#fff;padding:1px 6px;border-radius:8px;margin-left:4px">' + pendingCount + '</span>' : '') + '</button>'+
+          '</div>'+
+        '</div>'+
+        '<div id="obsPageContent"></div>';
+      var openTidyBtn = document.getElementById('__v2aOpenTidy');
+      if (openTidyBtn) openTidyBtn.addEventListener('click', function(){ obsOpenTidyModal(); });
+      var openPrpBtn = document.getElementById('__v2aOpenPrp');
+      if (openPrpBtn) openPrpBtn.addEventListener('click', function(){ v2a_openPendingReviewModal(); });
+    }
+    var $c = document.getElementById('obsPageContent');
+    if (mod === 'obs_universe') renderObsUniverse($c);
+    else if (mod === 'obs_connections') renderObsConnections($c);
+    else renderObsUniverse($c);
+  }
+
   var currentGovTab = 'topics';
   var currentConvTab = 'activity';
 
@@ -5911,648 +5646,6 @@
         '<div style="font-size:12px;color:#3A2F4D;line-height:1.5">' + it.desc + '</div>' +
       '</div>';
     }).join('');
-  }
-
-  /* ============================================================
-     V7.2 Knowledge Lineage · AI Recommend + True Conversion
-     ============================================================ */
-  function recommendLineage() {
-    var ev = topicEvents();
-    var links = storeState.tableRecords.knowledge_links || [];
-    var existingPairs = {};
-    links.forEach(function(l){
-      if (l['已确认']) existingPairs[l['源项 (record_id)'] + '|' + l['目标项 (record_id)']] = true;
-    });
-    // 按 record 聚类 events
-    var byRec = {};
-    ev.forEach(function(e){
-      var k = e['来源表'] + '#' + e['来源记录 ID'];
-      if (!byRec[k]) byRec[k] = { table: e['来源表'], id: e['来源记录 ID'], date: e['日期'], topics: {} };
-      byRec[k].topics[e['主题 ID']] = true;
-    });
-    var recs = Object.values(byRec);
-    // 找可能 lineage：相邻时间窗（30 天） + 共享 topic
-    var recDays = recs.map(function(r){
-      var d = new Date(r.date);
-      return { r: r, t: isNaN(d.getTime()) ? 0 : d.getTime() };
-    });
-    var recommends = [];
-    for (var i=0;i<recDays.length;i++) {
-      for (var j=0;j<recDays.length;j++) {
-        if (i === j) continue;
-        var A = recDays[i], B = recDays[j];
-        if (A.t === 0 || B.t === 0) continue;
-        var daysGap = Math.abs(A.t - B.t) / 86400000;
-        if (daysGap > 30) continue;
-        if (A.t >= B.t) continue; // A 在前 → B 在后
-        // 共享 topic
-        var shared = 0;
-        Object.keys(A.r.topics).forEach(function(tid){ if (B.r.topics[tid]) shared++; });
-        if (shared === 0) continue;
-        // 不重复推
-        var pairKey = A.r.id + '|' + B.r.id;
-        if (existingPairs[pairKey]) continue;
-        // 推断 relation
-        var rel = 'derived_from';
-        if (A.r.table === 'media' && B.r.table === 'study_notes') rel = 'inspires';
-        else if (A.r.table === 'study_notes' && B.r.table === 'projects') rel = 'applies';
-        else if (A.r.table === 'media' && B.r.table === 'projects') rel = 'extends';
-        else if (A.r.table === 'projects' && B.r.table === 'projects') rel = 'reuses';
-        else if (A.r.table === 'projects' && B.r.table === 'study_notes') rel = 'contributes_to';
-        var conf = 0.4 + shared * 0.15 + (daysGap < 7 ? 0.15 : 0);
-        conf = Math.min(0.9, conf);
-        recommends.push({
-          src: A.r, dst: B.r, shared: shared, days: Math.round(daysGap), rel: rel, conf: conf
-        });
-      }
-    }
-    return recommends.slice(0, 20);
-  }
-
-  function renderLineageSection() {
-    var recs = recommendLineage();
-    var html = '<div style="margin-top:14px">' +
-      obsSectionHeader('🔍 AI Recommend Lineage · 知识血缘', '系统根据 Topic 重合 + 时间接近 + 来源表关系，自动推荐可能的链路') +
-      '<div style="background:linear-gradient(160deg, rgba(255,255,255,0.78), rgba(247,240,251,0.45));border:1px solid rgba(255,255,255,0.65);border-radius:18px;padding:14px;box-shadow:0 4px 18px rgba(155,134,196,0.14);backdrop-filter:blur(12px)">';
-    if (!recs.length) {
-      html += '<div class="empty">暂无自动推荐 · 多录入数据后会出现（需要 ≥2 条共享 topic 的事件相隔 ≤30 天）</div>';
-    } else {
-      recs.forEach(function(r){
-        var srcT = Object.keys(r.src.topics).map(function(id){ return topicById(id); }).filter(Boolean).map(function(t){ return t['主题名']; }).join(' · ');
-        var dstT = Object.keys(r.dst.topics).map(function(id){ return topicById(id); }).filter(Boolean).map(function(t){ return t['主题名']; }).join(' · ');
-        html += '<div style="background:rgba(255,255,255,0.55);border:1px solid var(--c-line);border-radius:12px;padding:10px 12px;margin-bottom:8px">' +
-          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">' +
-            '<span style="font-size:10px;color:var(--c-muted);min-width:60px">#' + r.src.table + '</span>' +
-            '<strong style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (r.src.id || '?').slice(0,12) + '</strong>' +
-            '<span style="background:rgba(180,156,224,0.18);padding:1px 8px;border-radius:999px;font-size:10px;color:#6E5B8C;font-weight:600">' + r.rel + '</span>' +
-            '<span style="color:var(--c-muted);font-size:14px">→</span>' +
-            '<span style="font-size:10px;color:var(--c-muted);min-width:60px">' + r.dst.table + '</span>' +
-            '<strong style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (r.dst.id || '?').slice(0,12) + '</strong>' +
-            '<span style="margin-left:auto;font-size:11px;color:#6E5B8C">conf ' + (r.conf*100).toFixed(0) + '%</span>' +
-          '</div>' +
-          '<div style="font-size:11px;color:#3A2F4D;line-height:1.4;margin-bottom:6px">' +
-            '共享主题：' + escapeHTML(srcT.slice(0,40) + (srcT.length>40?'…':'')) +
-            '  •  间隔 ' + r.days + ' 天' +
-          '</div>' +
-          '<div style="display:flex;gap:6px">' +
-            '<button class="btn btn-ghost" data-lineage-confirm style="height:28px;padding:0 10px;font-size:11px">✓ Confirm</button>' +
-            '<button class="btn btn-ghost" data-lineage-reject style="height:28px;padding:0 10px;font-size:11px;color:#FF89A8">✕ Reject</button>' +
-          '</div>' +
-        '</div>';
-      });
-    }
-    html += '</div></div>';
-    setTimeout(function(){
-      var $c = document.getElementById('obsPageContent');
-      if (!$c) return;
-      var $items = Array.prototype.slice.call($c.querySelectorAll('[data-lineage-confirm]'));
-      $items.forEach(function(b, i){
-        b.onclick = function() {
-          var r = recs[i]; if (!r) return;
-          addKnowledgeLink(r.src.id, r.dst.id, r.rel, r.conf);
-        };
-      });
-      var $rejs = Array.prototype.slice.call($c.querySelectorAll('[data-lineage-reject]'));
-      $rejs.forEach(function(b, i){
-        b.onclick = function(){ toast('已忽略该推荐', 'success'); };
-      });
-    }, 0);
-    return html;
-  }
-
-  function addKnowledgeLink(srcId, dstId, rel, conf) {
-    if (!storeState.tableRecords.knowledge_links) storeState.tableRecords.knowledge_links = [];
-    var id = uid();
-    storeState.tableRecords.knowledge_links.push({
-      _id: id, _ts: Date.now(),
-      '源项 (record_id)': srcId,
-      '目标项 (record_id)': dstId,
-      '关系': rel || 'derived_from',
-      '置信度': conf || 0.7,
-      '已确认': true,
-      '创建时间': new Date().toISOString().slice(0,10)
-    });
-    saveLocal('knowledge_links');
-    toast('已添加 Knowledge Link', 'success');
-  }
-
-  function obsSectionHeader(title, sub) {
-    return '<div style="margin:18px 0 8px">' +
-      '<h4 style="font-size:15px;font-weight:700;color:#4A3B63;margin:0 0 2px">' + title + '</h4>' +
-      '<div style="font-size:12px;color:#5B4A7A;line-height:1.4;font-weight:500">' + sub + '</div>' +
-    '</div>';
-  }
-
-  function renderTrueConversionFunnel(selId) {
-    var links = (storeState.tableRecords.knowledge_links || []).filter(function(l){ return l['已确认']; });
-    if (links.length < 3) {
-      return '<div style="background:linear-gradient(160deg, rgba(255,200,138,0.18), rgba(255,234,200,0.18));border:1px dashed #FFC78A;border-radius:14px;padding:18px;margin-top:14px;font-size:13px;color:#6E5B8C">⚠ 尚未形成足够的知识血缘数据 · 当前 <strong>' + links.length + '</strong> 条已确认 Lineage · 至少需要 3 条才能计算 True Conversion · 建议先到 <strong>Governance → Connections Review</strong> 用 AI Recommend 补充</div>';
-    }
-    // 对每对 link，统计 src/dst record 的 stage
-    var STAGE_ORDER_IDX = {'E1 Explore':0,'E2 Learn':1,'E3 Synthesize':2,'E4 Apply':3,'E5 Output':4,'E6 Reuse':5};
-    var ev = topicEvents();
-    var convCounts = [0,0,0,0,0,0];
-    links.forEach(function(l){
-      // src event
-      var srcEv = ev.find(function(e){ return e['来源表'] + '#' + e['来源记录 ID'] === l['源项 (record_id)'] || e['来源记录 ID'] === l['源项 (record_id)']; });
-      var dstEv = ev.find(function(e){ return e['来源记录 ID'] === l['目标项 (record_id)']; });
-      if (srcEv && STAGE_ORDER_IDX[srcEv['阶段']] !== undefined) convCounts[STAGE_ORDER_IDX[srcEv['阶段']]]++;
-      if (dstEv && STAGE_ORDER_IDX[dstEv['阶段']] !== undefined) convCounts[STAGE_ORDER_IDX[dstEv['阶段']]]++;
-    });
-    var color = ['#F2C6DC','#B49CE0','#9C82D4','#7FC8A9','#FFC78A','#6E5B8C'];
-    var html = '<div style="margin-top:14px">' +
-      obsSectionHeader('🔻 True Conversion Funnel · 基于 ' + links.length + ' 条已确认 Linkage', 'Conversion(s → s+1) = N(s+1) / N(s) · 真实知识血缘驱动的转化率') +
-      '<div style="background:linear-gradient(160deg, rgba(255,255,255,0.78), rgba(247,240,251,0.45));border:1px solid rgba(255,255,255,0.65);border-radius:18px;padding:14px;box-shadow:0 4px 18px rgba(155,134,196,0.14)">';
-    var total = convCounts.reduce(function(s,n){ return s+n; }, 0);
-    var prev = total;
-    STAGE_ORDER.forEach(function(st, i){
-      var c = convCounts[i];
-      var conv = prev > 0 ? (c / prev * 100).toFixed(0) : '—';
-      var w = Math.max(2, total > 0 ? (c / total * 100) : 0);
-      html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">' +
-        '<span style="min-width:130px;font-size:12px;font-weight:600">' + st + '</span>' +
-        '<div style="flex:1;height:24px;border-radius:6px;background:rgba(245,240,250,0.6);position:relative">' +
-        '<div style="position:absolute;left:0;top:0;bottom:0;width:' + w + '%;background:' + color[i] + ';opacity:0.9;border-radius:6px"></div>' +
-        '<span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:11px;color:#fff;font-weight:700;mix-blend-mode:difference">' + c + '</span>' +
-        '</div>' +
-        '<span style="min-width:50px;font-size:11px;color:var(--c-muted);text-align:right">' + (c > 0 && prev > 0 ? conv + '%' : '—') + '</span>' +
-      '</div>';
-      if (c > 0) prev = c; else prev = 0;
-    });
-    html += '</div></div>';
-    return html;
-  }
-
-  /* ============================================================
-     V7.3 统一入口：Data Governance & Lineage 按钮（4 子页底部共用）
-     ============================================================ */
-  function renderGovEntry() {
-    return '<div style="margin-top:18px;background:linear-gradient(135deg, rgba(180,156,224,0.10), rgba(255,200,138,0.10));border:1px dashed rgba(180,156,224,0.45);border-radius:16px;padding:14px 18px;display:flex;align-items:center;gap:14px">' +
-      '<div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg, var(--c-purple), var(--c-pink));display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;box-shadow:0 4px 14px rgba(180,156,224,0.3);flex-shrink:0">⚙</div>' +
-      '<div style="flex:1;min-width:0">' +
-        '<div style="font-size:14px;font-weight:700;color:#4A3B63;margin-bottom:2px">Data Governance & Lineage</div>' +
-        '<div style="font-size:12px;color:#5B4A7A;line-height:1.4">管理 Topic · Review AI 分类 · 确认 Knowledge Linkage · 查看数据健康与计算公式</div>' +
-      '</div>' +
-      '<button class="btn btn-primary" data-open-gov style="height:40px;padding:0 18px;font-size:13px;flex-shrink:0">打开治理台</button>' +
-    '</div>';
-  }
-
-  /* ============================================================
-     V8 主题发展：可解释贡献聚合 + 近况首页 + 局部关系探索
-     ============================================================ */
-  function obsPeriodDays() {
-    return obsFilter.time === '7D' ? 7 : (obsFilter.time === '30D' ? 30 : (obsFilter.time === '90D' ? 90 : (obsFilter.time === 'YTD' ? 365 : 36500)));
-  }
-  function obsSourceLabel(table) {
-    return ({projects:'任务与项目',today_tasks:'日常任务',study_tasks:'学习任务',courses:'课程学习',study_checkins:'习惯打卡',study_habits:'学习习惯',study_notes:'笔记记录',media:'书影音',year_plan:'年度计划',weekly_reviews:'复盘记录',inbox:'Inbox'})[table] || table || '其他记录';
-  }
-  function obsRecordTitle(table, r) {
-    if (!r) return obsSourceLabel(table);
-    return r['标题'] || r['项目名'] || r['课程名'] || r['习惯名'] || r['内容'] || r['周'] || obsSourceLabel(table);
-  }
-  function obsFindSourceRecord(e) {
-    var table = e['来源表'];
-    var id = e['来源记录 ID'];
-    var rows = (storeState.tableRecords && storeState.tableRecords[table]) || [];
-    for (var i=0;i<rows.length;i++) if (rows[i]._id === id) return rows[i];
-    return null;
-  }
-  function obsEventIsRealized(e, rec) {
-    var table = e['来源表'];
-    if (table === 'study_checkins' || table === 'study_notes' || table === 'weekly_reviews') return true;
-    if (!rec) return ['E3 Synthesize','E5 Output','E6 Reuse'].indexOf(e['阶段']) >= 0;
-    if (table === 'projects' || table === 'year_plan') return rec['状态'] === '已完成';
-    if (table === 'courses') return rec['状态'] === '已学完';
-    if (table === 'media') return rec['状态'] === '已完结';
-    if (table === 'today_tasks' || table === 'study_tasks') return rec['状态'] === '已完成';
-    if (table === 'inbox') return rec['状态'] === '已处理' || rec['状态'] === '已归档';
-    return true;
-  }
-  // 统一贡献口径权重表（方案第四节）：贡献分 = 记录类型权重 × 主题角色权重 × 成果阶段权重
-  // 完成权重已由 obsEventIsRealized 的 0/1 过滤实现（未完成/进行中不计入）
-  var OBS_TYPE_WEIGHT = {
-    today_tasks: 1.0,    // 普通任务
-    study_tasks: 1.0,    // 学习任务
-    courses: 1.2,        // 课程阶段完成
-    study_notes: 1.0,    // 学习笔记
-    media: 1.0,          // 书影音完成
-    study_checkins: 0.5, // 习惯打卡
-    weekly_reviews: 1.0, // 复盘
-    inbox: 1.0           // Inbox
-  };
-  function obsContributionWeight(e, rec) {
-    var table = e['来源表'];
-    var typeW;
-    if (table === 'projects' || table === 'year_plan') {
-      // 项目/年度计划：成果 1.6（已完成），里程碑 1.4（进行中）
-      typeW = (rec && rec['状态'] === '已完成') ? 1.6 : 1.4;
-    } else {
-      typeW = OBS_TYPE_WEIGHT[table];
-    }
-    if (typeW == null) typeW = 1.0;
-    var roleW = e['主题角色'] === 'secondary' ? 0.5 : 1.0; // 主要 1.0 / 同时涉及 0.5
-    var stageW = STAGE_WEIGHT[e['阶段']] || 1;              // 成果阶段（沿用 E1–E6）
-    return typeW * roleW * stageW;
-  }
-  function aggregateTopicContributions(days, offsetDays) {
-    days = days || 30; offsetDays = offsetDays || 0;
-    var topics = obsGetTopics(), byId = {}, habitSeen = {}, habitDayCount = {};
-    // 习惯限制（方案第四节）：每天最多计一次；周期内最多计 N 天，表达持续性但不过度压过项目成果
-    var habitDayCap = ({7:3, 30:12, 90:30})[days] || 60;
-    topics.forEach(function(t){ byId[t._id] = {topicId:t._id,topic:t,period:days,score:0,previousPeriodScore:0,changeRate:0,completedRecordCount:0,activeDays:0,sourceBreakdown:{},roleBreakdown:{primary:0,secondary:0},recentRecords:[],_recordKeys:{},_days:{}}; });
-    topicEvents().forEach(function(e){
-      var tid=e['主题 ID'], item=byId[tid]; if(!item) return;
-      var age=ageInDays(e['日期']); if(age < offsetDays || age >= offsetDays + days) return;
-      var rec=obsFindSourceRecord(e); if(!obsEventIsRealized(e,rec)) return;
-      var table=e['来源表'], date=e['日期']||'', key=table+'|'+(e['来源记录 ID']||date);
-      if(table==='study_checkins') {
-        var hk=tid+'|'+date;
-        if(habitSeen[hk] || (habitDayCount[tid]||0) >= habitDayCap) return;
-        habitSeen[hk]=1; habitDayCount[tid]=(habitDayCount[tid]||0)+1;
-      }
-      var w=obsContributionWeight(e, rec); item.score+=w;
-      var source=obsSourceLabel(table); item.sourceBreakdown[source]=(item.sourceBreakdown[source]||0)+w;
-      var role=e['主题角色']==='secondary'?'secondary':'primary'; item.roleBreakdown[role]+=w;
-      item._days[date]=1;
-      if(!item._recordKeys[key]) {
-        item._recordKeys[key]=1; item.completedRecordCount++;
-        item.recentRecords.push({date:date,table:table,recordId:e['来源记录 ID']||'',title:obsRecordTitle(table,rec),stage:e['阶段'],role:role});
-      }
-    });
-    return Object.keys(byId).map(function(id){
-      var x=byId[id]; x.score=Math.round(x.score*10)/10; x.activeDays=Object.keys(x._days).length;
-      x.recentRecords.sort(function(a,b){return (b.date||'').localeCompare(a.date||'');});
-      delete x._recordKeys; delete x._days; return x;
-    }).filter(function(x){return x.score>0;}).sort(function(a,b){return b.score-a.score;});
-  }
-  function obsContributionModel() {
-    var days=obsPeriodDays(), cur=aggregateTopicContributions(days,0), prev=aggregateTopicContributions(days,days), prevMap={};
-    prev.forEach(function(x){prevMap[x.topicId]=x.score;});
-    cur.forEach(function(x){
-      x.previousPeriodScore=prevMap[x.topicId]||0;
-      x.changeRate=x.previousPeriodScore>0?Math.round((x.score-x.previousPeriodScore)/x.previousPeriodScore*100):(x.score>0?100:0);
-    });
-    return cur;
-  }
-  function obsContributionTimeline(items) {
-    var grouped={};
-    items.forEach(function(x){x.recentRecords.forEach(function(r){
-      var k=r.table+'|'+r.recordId+'|'+r.date;
-      if(!grouped[k]) grouped[k]={date:r.date,title:r.title,table:r.table,topics:[]};
-      if(grouped[k].topics.indexOf(x.topic['主题名'])<0) grouped[k].topics.push(x.topic['主题名']);
-    });});
-    return Object.keys(grouped).map(function(k){return grouped[k];}).sort(function(a,b){return (b.date||'').localeCompare(a.date||'');});
-  }
-  function obsEvidencePairs(days) {
-    var groups={}, topics={}; topicsList().forEach(function(t){topics[t._id]=t;});
-    topicEvents().forEach(function(e){
-      if(ageInDays(e['日期'])>=days) return;
-      var rec=obsFindSourceRecord(e); if(!obsEventIsRealized(e,rec)) return;
-      var key=e['来源表']+'|'+(e['来源记录 ID']||e['日期']);
-      if(!groups[key]) groups[key]={ids:[],records:[]};
-      if(groups[key].ids.indexOf(e['主题 ID'])<0) groups[key].ids.push(e['主题 ID']);
-      groups[key].records.push(obsRecordTitle(e['来源表'],rec));
-    });
-    var pairs={}; Object.keys(groups).forEach(function(k){var g=groups[k]; for(var i=0;i<g.ids.length;i++)for(var j=i+1;j<g.ids.length;j++){
-      var ids=[g.ids[i],g.ids[j]].sort(), pk=ids.join('|');
-      if(!pairs[pk]) pairs[pk]={a:topics[ids[0]],b:topics[ids[1]],count:0,records:[],last:''};
-      if(!pairs[pk].a||!pairs[pk].b) continue;
-      pairs[pk].count++; pairs[pk].records.push(g.records[0]);
-      var last=(groupedDateFromKey(k)||''); if(last>pairs[pk].last)pairs[pk].last=last;
-    }});
-    return Object.keys(pairs).map(function(k){return pairs[k];}).filter(function(p){return p.a&&p.b;}).sort(function(a,b){return b.count-a.count;});
-  }
-  function groupedDateFromKey(key) {
-    var table=key.split('|')[0], id=key.split('|')[1], rows=(storeState.tableRecords&&storeState.tableRecords[table])||[];
-    for(var i=0;i<rows.length;i++)if(rows[i]._id===id)return rows[i]['日期']||rows[i]['完结']||rows[i]['截止']||'';
-    return '';
-  }
-  function growthPeriodHTML() {
-    return '<div class="growth-period">'+['7D','30D','90D','All'].map(function(t){return '<button data-growth-period="'+t+'" class="'+(obsFilter.time===t?'on':'')+'">'+(t==='7D'?'7 天':t==='30D'?'30 天':t==='90D'?'90 天':'全部')+'</button>';}).join('')+'</div>';
-  }
-  function bindGrowthPeriod($c, rerender) {
-    Array.prototype.slice.call($c.querySelectorAll('[data-growth-period]')).forEach(function(b){b.onclick=function(){obsFilter.time=b.getAttribute('data-growth-period');rerender($c);};});
-  }
-  function renderGrowthDetail(item,maxScore) {
-    var sources=Object.keys(item.sourceBreakdown).sort(function(a,b){return item.sourceBreakdown[b]-item.sourceBreakdown[a];});
-    return '<div class="growth-detail"><div class="growth-detail-title"><strong>'+escapeHTML(item.topic['主题名'])+' · '+item.score.toFixed(1)+' 分</strong><button class="growth-link-btn" data-open-rel="'+escapeHTML(item.topicId)+'">查看关系</button></div>'+
-      '<div style="font-size:11px;color:var(--c-muted);margin-bottom:7px">主要贡献 '+item.roleBreakdown.primary.toFixed(1)+' · 同时涉及 '+item.roleBreakdown.secondary.toFixed(1)+' · '+item.completedRecordCount+' 条完成记录</div>'+
-      sources.map(function(s){var v=item.sourceBreakdown[s];return '<div class="growth-source-row"><span>'+escapeHTML(s)+'</span><div class="growth-mini-bar"><i style="width:'+Math.max(4,v/item.score*100)+'%"></i></div><b>'+v.toFixed(1)+'</b></div>';}).join('')+
-      (item.recentRecords.length?'<div style="margin-top:8px;font-size:11px;color:var(--c-muted)">最近：'+item.recentRecords.slice(0,3).map(function(r){return escapeHTML(r.title);}).join(' · ')+'</div>':'')+'</div>';
-  }
-  function renderObsUniverse($c) {
-    var items=obsContributionModel(), timeline=obsContributionTimeline(items), days=obsPeriodDays(), pairs=obsEvidencePairs(days), topics=obsGetTopics();
-    var completed={}; timeline.forEach(function(r){completed[r.table+'|'+r.title]=1;});
-    var activeDays={}; items.forEach(function(x){x.recentRecords.forEach(function(r){if(r.date)activeDays[r.date]=1;});});
-    var totalScore=items.reduce(function(s,x){return s+x.score;},0), maxScore=items.length?items[0].score:1;
-    var selected=obsCtx.growthSelected|| (items[0]&&items[0].topicId); obsCtx.growthSelected=selected;
-    var selectedItem=items.filter(function(x){return x.topicId===selected;})[0];
-    var html='<div class="growth-shell"><section class="growth-hero"><div class="growth-hero-row"><div><h2>主题发展</h2><p>把最近完成的事，沉淀为持续成长的主题。</p></div>'+growthPeriodHTML()+'</div>'+
-      '<div class="growth-kpis"><div class="growth-kpi"><b>'+Object.keys(completed).length+'</b><span>本期完成记录</span></div><div class="growth-kpi"><b>'+items.length+'</b><span>活跃主题</span></div><div class="growth-kpi"><b>'+Object.keys(activeDays).length+'</b><span>有积累的天数</span></div></div></section>';
-    if(!topics.length) {
-      html+='<section class="growth-panel growth-empty"><strong style="display:block;color:#42364D;margin-bottom:7px">还没有正式主题</strong>你可以在创建记录时选择主题，也可以稍后统一整理。</section></div>';
-      $c.innerHTML=html; bindGrowthPeriod($c,renderObsUniverse); return;
-    }
-    html+='<div class="growth-grid"><section class="growth-panel"><div class="growth-section-head"><h3>主题贡献排行</h3><span>加权贡献 · 可追溯到完成记录</span></div>';
-    if(!items.length) html+='<div class="growth-empty">这个周期还没有已完成的主题记录。完成任务、项目节点或习惯打卡后，这里会开始积累。</div>';
-    else items.slice(0,8).forEach(function(x,idx){html+='<div class="growth-topic-row" data-growth-topic="'+escapeHTML(x.topicId)+'"><span class="growth-rank">'+(idx+1)+'</span><span class="growth-topic-name">'+escapeHTML(x.topic['主题名'])+'</span><span class="growth-bar"><i style="width:'+Math.max(5,x.score/maxScore*100)+'%"></i></span><span class="growth-score">'+x.score.toFixed(1)+'</span><span class="growth-delta '+(x.changeRate>=0?'up':'down')+'">'+(x.changeRate>=0?'↑':'↓')+Math.abs(x.changeRate)+'%</span></div>';});
-    if(selectedItem) html+=renderGrowthDetail(selectedItem,maxScore);
-    html+='</section><aside><section class="growth-panel"><div class="growth-section-head"><h3>最近完成了什么</h3><span>最近 '+Math.min(8,timeline.length)+' 条</span></div><div class="growth-timeline">';
-    if(!timeline.length) html+='<div class="growth-empty">暂无已完成记录</div>'; else timeline.slice(0,8).forEach(function(r){html+='<div class="growth-timeline-row"><span class="growth-timeline-date">'+escapeHTML((r.date||'').slice(5)||'—')+'</span><div class="growth-timeline-main"><strong>'+escapeHTML(r.title)+'</strong><small>'+escapeHTML(obsSourceLabel(r.table))+'</small></div><span class="growth-topic-chip">'+escapeHTML(r.topics[0]||'主题')+(r.topics.length>1?' +'+(r.topics.length-1):'')+'</span></div>';});
-    html+='</div></section><section class="growth-panel" style="margin-top:14px"><div class="growth-section-head"><h3>下一步值得探索什么</h3><span>基于共同完成记录</span></div>';
-    var opportunities=pairs.filter(function(p){return p.count>=2;}).slice(0,3);
-    if(!opportunities.length) html+='<div class="growth-empty">数据不足。至少需要两个主题在两条已完成记录中共同出现，才会形成探索建议。</div>'; else opportunities.forEach(function(p){html+='<div class="growth-opportunity"><strong>'+escapeHTML(p.a['主题名'])+' × '+escapeHTML(p.b['主题名'])+'</strong><p>它们已在 '+p.count+' 条完成记录中共同出现。可以尝试把这组方法用于一个小项目，并观察是否更高效。</p></div>';});
-    html+='</section></aside></div></div>';
-    $c.innerHTML=html; bindGrowthPeriod($c,renderObsUniverse);
-    Array.prototype.slice.call($c.querySelectorAll('[data-growth-topic]')).forEach(function(row){row.onclick=function(){obsCtx.growthSelected=row.getAttribute('data-growth-topic');renderObsUniverse($c);};});
-    Array.prototype.slice.call($c.querySelectorAll('[data-open-rel]')).forEach(function(b){b.onclick=function(){obsCtx.focusTopicId=b.getAttribute('data-open-rel');currentMod='obs_connections';renderSubBar();renderMod();};});
-  }
-  function renderObsConnections($c) {
-    var items=obsContributionModel(), topics=obsGetTopics(), pairs=obsEvidencePairs(obsPeriodDays());
-    var focusId=obsCtx.focusTopicId || (items[0]&&items[0].topicId) || (topics[0]&&topics[0]._id); obsCtx.focusTopicId=focusId;
-    var focus=topicById(focusId), related=pairs.filter(function(p){return p.a._id===focusId||p.b._id===focusId;}).slice(0,8), mode=obsCtx.relationshipMode||'map';
-    var html='<div class="growth-shell"><section class="growth-hero"><div class="growth-hero-row"><div><h2>关系探索</h2><p>先看真实共现证据，再决定是否值得发展成新的方向。</p></div>'+growthPeriodHTML()+'</div></section>'+
-      '<section class="growth-panel"><div class="growth-section-head"><div><h3>'+(focus?escapeHTML(focus['主题名']):'选择一个主题')+' 的局部关系</h3><span>仅显示一至二跳邻居，避免全量星图噪声</span></div><div class="growth-view-toggle"><button data-rel-mode="map" class="'+(mode==='map'?'on':'')+'">主题地图</button><button data-rel-mode="list" class="'+(mode==='list'?'on':'')+'">列表视图</button></div></div>'+
-      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'+topics.slice(0,20).map(function(t){return '<button class="growth-link-btn" data-focus-topic="'+escapeHTML(t._id)+'" style="'+(t._id===focusId?'background:var(--c-purple);color:#fff':'')+'">'+escapeHTML(t['主题名'])+'</button>';}).join('')+'</div>';
-    if(!focus) html+='<div class="growth-empty">还没有主题</div>'; else if(mode==='map') html+='<div class="growth-relationship-layout"><div class="growth-map-wrap"><canvas id="growthRelationshipCanvas" width="900" height="420"></canvas></div><div id="growthRelationshipDetail"></div></div>'; else {
-      html+='<div>'; if(!related.length) html+='<div class="growth-empty">这个周期还没有可验证的主题联系。</div>'; related.forEach(function(p){var other=p.a._id===focusId?p.b:p.a;html+='<div class="growth-topic-row" data-focus-topic="'+escapeHTML(other._id)+'"><span class="growth-rank">'+p.count+'</span><span class="growth-topic-name" style="width:180px">'+escapeHTML(other['主题名'])+'</span><span style="flex:1;color:var(--c-muted);font-size:12px">共同完成 '+p.count+' 条 · '+escapeHTML((p.records||[]).slice(0,2).join('、'))+'</span><button class="growth-link-btn">查看</button></div>';}); html+='</div>';
-    }
-    html+='</section><section class="growth-panel"><div class="growth-section-head"><h3>发展建议</h3><span>证据 + 小型尝试</span></div>';
-    var best=related.filter(function(p){return p.count>=2;})[0];
-    if(!best) html+='<div class="growth-empty">数据不足，暂不生成方向建议。继续记录并完成真实工作后再回来看看。</div>'; else {var other=best.a._id===focusId?best.b:best.a, conf=Math.min(95,45+best.count*12);html+='<div class="growth-opportunity"><strong>'+escapeHTML(focus['主题名'])+' × '+escapeHTML(other['主题名'])+'</strong><p><b>推荐原因：</b>两者已在 '+best.count+' 条完成记录中共同出现。</p><p><b>支撑记录：</b>'+escapeHTML(best.records.slice(0,3).join('、'))+'</p><p><b>置信度：</b>'+conf+'% · <b>小型尝试：</b>用这两个主题共同完成一个 1–2 周的小项目，并在结束后复盘效率。</p><div style="margin-top:9px"><button class="growth-link-btn" data-suggestion-feedback="helpful">有帮助</button> <button class="growth-link-btn" data-suggestion-feedback="irrelevant">不相关</button></div></div>';}
-    html+='</section></div>';
-    $c.innerHTML=html; bindGrowthPeriod($c,renderObsConnections);
-    Array.prototype.slice.call($c.querySelectorAll('[data-rel-mode]')).forEach(function(b){b.onclick=function(){obsCtx.relationshipMode=b.getAttribute('data-rel-mode');renderObsConnections($c);};});
-    Array.prototype.slice.call($c.querySelectorAll('[data-focus-topic]')).forEach(function(b){b.onclick=function(){obsCtx.focusTopicId=b.getAttribute('data-focus-topic');renderObsConnections($c);};});
-    Array.prototype.slice.call($c.querySelectorAll('[data-suggestion-feedback]')).forEach(function(b){b.onclick=function(){toast(b.getAttribute('data-suggestion-feedback')==='helpful'?'已记录：这条建议有帮助':'已记录：减少类似建议','success');};});
-    if(mode==='map'&&focus) renderGrowthRelationshipCanvas(focus,related,items);
-  }
-  function renderGrowthRelationshipCanvas(focus, related, items) {
-    var canvas=document.getElementById('growthRelationshipCanvas'); if(!canvas)return; var ctx=canvas.getContext('2d'),dpr=window.devicePixelRatio||1,w=canvas.clientWidth,h=420;canvas.width=w*dpr;canvas.height=h*dpr;ctx.scale(dpr,dpr);ctx.clearRect(0,0,w,h);
-    var scoreMap={};items.forEach(function(x){scoreMap[x.topicId]=x;}); var nodes=[],cx=w/2,cy=h/2; nodes.push({id:focus._id,name:focus['主题名'],x:cx,y:cy,r:34,focus:true});
-    related.forEach(function(p,i){var t=p.a._id===focus._id?p.b:p.a,ang=-Math.PI/2+i*Math.PI*2/Math.max(related.length,1),r=145;nodes.push({id:t._id,name:t['主题名'],x:cx+Math.cos(ang)*r,y:cy+Math.sin(ang)*r,r:18+Math.min(12,(scoreMap[t._id]&&scoreMap[t._id].score)||0),count:p.count});});
-    related.forEach(function(p,i){var n=nodes[i+1];ctx.strokeStyle='rgba(125,96,190,'+Math.min(.75,.18+p.count*.12)+')';ctx.lineWidth=Math.min(9,1+p.count*1.4);ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(n.x,n.y);ctx.stroke();ctx.fillStyle='#6E5B8C';ctx.font='11px sans-serif';ctx.textAlign='center';ctx.fillText(String(p.count),cx+(n.x-cx)*.55,cy+(n.y-cy)*.55-4);});
-    nodes.forEach(function(n){var item=scoreMap[n.id],delta=item?item.changeRate:0;ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,Math.PI*2);ctx.fillStyle=n.focus?'#8F70C6':(delta>0?'#B49CE0':'#D7CAE9');ctx.shadowColor='rgba(110,91,140,.22)';ctx.shadowBlur=12;ctx.fill();ctx.shadowBlur=0;ctx.fillStyle=n.focus?'#fff':'#42364D';ctx.font=(n.focus?'700 13px':'600 11px')+' sans-serif';ctx.textAlign='center';var label=n.name.length>12?n.name.slice(0,11)+'…':n.name;ctx.fillText(label,n.x,n.y+4);});
-    obsCtx.focusNodes=nodes; canvas.onclick=function(ev){var r=canvas.getBoundingClientRect(),x=ev.clientX-r.left,y=ev.clientY-r.top,hit=null;nodes.forEach(function(n){if(Math.hypot(x-n.x,y-n.y)<=n.r+6)hit=n;});if(hit&&hit.id!==focus._id){obsCtx.focusTopicId=hit.id;renderObsConnections(document.getElementById('obsPageContent'));}};
-    var detail=document.getElementById('growthRelationshipDetail'),fi=scoreMap[focus._id],top=related[0];detail.innerHTML='<div class="growth-detail" style="margin:0;height:100%"><div class="growth-detail-title"><strong>'+escapeHTML(focus['主题名'])+'</strong></div><p style="font-size:12px;color:var(--c-muted);line-height:1.6">节点大小代表本期贡献，颜色深浅代表近期变化，连线粗细代表共同完成记录数。</p><div class="growth-kpi"><b>'+((fi&&fi.score)||0).toFixed(1)+'</b><span>本期贡献分</span></div>'+(top?'<div class="growth-opportunity" style="margin-top:10px"><strong>最常共同出现</strong><p>'+escapeHTML((top.a._id===focus._id?top.b:top.a)['主题名'])+' · '+top.count+' 条共同记录</p></div>':'<div class="growth-empty">暂无关系证据</div>')+'</div>';
-  }
-
-  /* ============================================================
-     待整理主题 UI（合并 / 保留 / 移除）
-     ============================================================ */
-  function obsFormalTopics(excludeId) {
-    return topicsList().filter(function(t){
-      return !t._auto && t._id !== excludeId && t['治理状态'] !== 'archived' && t['治理状态'] !== 'merged';
-    });
-  }
-  function obsRenderTidyPanel() {
-    var cands = obsListTidyTopics();
-    if (!cands.length) {
-      return '<div style="text-align:center;padding:32px 12px;color:var(--c-muted)">没有待整理主题。标题型自动主题已全部处理完毕 ✓</div>';
-    }
-    var formal = obsFormalTopics(null);
-    var html = '<p style="font-size:12px;color:var(--c-muted);line-height:1.6;margin:0 0 14px">以下是早期从记录标题自动生成的主题（已停止自动生成）。请逐一决定：<b>合并</b>到正式主题（避免重复）、<b>保留</b>为长期方向，或<b>移除</b>（不影响原始记录）。</p>';
-    cands.forEach(function(t){
-      var stats = obsTidyStats(t._id);
-      var src = stats.sourceTitles.slice(0, 3).map(function(s){ return escapeHTML(s); }).join('、');
-      html += '<div class="v2a-prp-card" style="border-color:#FFC9BF">'+
-        '<div class="v2a-prp-row1"><div class="v2a-prp-topic">'+escapeHTML(t['主题名'])+'</div><span class="v2a-badge" style="background:#FFE8E3;color:#E0644F">自动生成</span></div>'+
-        '<div class="v2a-prp-row2"><span class="v2a-prp-rec">'+stats.eventCount+' 条事件'+(src?' · 来源：'+src:'')+'</span></div>'+
-        '<div class="v2a-prp-actions">'+
-          '<button class="v2a-btn v2a-btn-edit" data-tidy-act="toggle-merge" data-tidy-id="'+escapeHTML(t._id)+'">⇄ 合并</button>'+
-          '<button class="v2a-btn v2a-btn-confirm" data-tidy-act="keep" data-tidy-id="'+escapeHTML(t._id)+'">✓ 保留</button>'+
-          '<button class="v2a-btn v2a-btn-reject" data-tidy-act="remove" data-tidy-id="'+escapeHTML(t._id)+'">✗ 移除</button>'+
-        '</div>'+
-        '<div id="__tidyMerge_'+escapeHTML(t._id)+'" style="display:none;margin-top:10px;padding:10px;background:rgba(255,255,255,0.6);border:1px solid var(--c-line);border-radius:10px">'+
-          '<div style="font-size:12px;color:#6E5B8C;margin-bottom:6px">合并到：</div>'+
-          '<select id="__tidySel_'+escapeHTML(t._id)+'" style="width:100%;padding:7px 9px;border:1px solid var(--c-line);border-radius:8px;font-size:13px;font-family:inherit;margin-bottom:6px">'+
-            (formal.length ? formal.map(function(f){ return '<option value="'+escapeHTML(f._id)+'">'+escapeHTML(f['主题名'])+'</option>'; }).join('') : '<option value="">（暂无正式主题，请在下方输入新主题名）</option>')+
-          '</select>'+
-          '<input id="__tidyInput_'+escapeHTML(t._id)+'" placeholder="或输入新主题名，回车/点确认" style="width:100%;padding:7px 9px;border:1px solid var(--c-line);border-radius:8px;font-size:13px;font-family:inherit;margin-bottom:8px">'+
-          '<button class="v2a-btn v2a-btn-confirm" data-tidy-act="confirm-merge" data-tidy-id="'+escapeHTML(t._id)+'">确认合并</button>'+
-        '</div>'+
-      '</div>';
-    });
-    return html;
-  }
-  function obsOpenTidyModal() {
-    var html = '<div class="modal-bg" id="__tidyBg">'+
-      '<div class="modal" style="max-width:680px;max-height:80vh;overflow-y:auto">'+
-        '<div class="topbar"></div>'+
-        '<h3>🧹 待整理主题</h3>'+
-        '<div id="__tidyBody">' + obsRenderTidyPanel() + '</div>'+
-        '<div class="form-actions">'+
-          '<button type="button" class="btn btn-ghost" id="__tidyClose">关闭</button>'+
-        '</div>'+
-      '</div>'+
-    '</div>';
-    $modalRoot.innerHTML = html;
-    var bg = document.getElementById('__tidyBg');
-    document.getElementById('__tidyClose').addEventListener('click', function(){ $modalRoot.innerHTML = ''; });
-    var body = document.getElementById('__tidyBody');
-    body.addEventListener('click', function(ev){
-      var t = ev.target;
-      while (t && t !== body) {
-        var act = t.getAttribute && t.getAttribute('data-tidy-act');
-        if (act) {
-          var tid = t.getAttribute('data-tidy-id');
-          var topic = topicById(tid);
-          var name = topic ? topic['主题名'] : '';
-          if (act === 'keep') {
-            var r = obsTidyKeep(tid);
-            if (r.ok) { toast('已保留主题「'+name+'」', 'success'); body.innerHTML = obsRenderTidyPanel(); refreshTidyToolbar(); }
-            else toast('操作失败：'+(r.error||''), 'danger');
-          } else if (act === 'remove') {
-            confirmDialog('移除主题「'+name+'」及其事件（原始记录不受影响），确定？', { title:'移除主题', okText:'移除', danger:true })
-              .then(function(ok){ if(!ok) return; var r = obsTidyRemove(tid); if (r.ok) { toast('已移除主题「'+name+'」', 'success'); body.innerHTML = obsRenderTidyPanel(); refreshTidyToolbar(); } });
-          } else if (act === 'toggle-merge') {
-            var box = document.getElementById('__tidyMerge_'+tid);
-            if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
-          } else if (act === 'confirm-merge') {
-            var sel = document.getElementById('__tidySel_'+tid);
-            var inp = document.getElementById('__tidyInput_'+tid);
-            var newName = inp ? inp.value.trim() : '';
-            var targetId = sel && sel.value ? sel.value : '';
-            if (newName) {
-              // 输入新主题名：先创建正式主题，再合并
-              var existing = findTopicByName(newName);
-              if (existing && existing._id !== tid) { targetId = existing._id; doMerge(tid, targetId); }
-              else if (existing && existing._id === tid) { toast('新主题名不能与源主题同名', 'danger'); }
-              else {
-                Store.addRecord('topics', { '主题名': newName, '别名': '', '类型': topic ? topic['类型'] : '领域', '说明': '合并时创建', '创建时间': todayStr(), '治理状态': 'active', '分析状态': 'Developing' })
-                  .then(function(nr){ doMerge(tid, nr._id); })
-                  .catch(function(err){ toast('创建失败：'+(err&&err.message||err), 'danger'); });
-              }
-            } else if (targetId) {
-              doMerge(tid, targetId);
-            } else {
-              toast('请选择目标主题或输入新主题名', 'danger');
-            }
-          }
-          return;
-        }
-        t = t.parentNode;
-      }
-    });
-    function doMerge(sourceId, targetId) {
-      var topic = topicById(sourceId);
-      var tname = topic ? topic['主题名'] : '';
-      var target = topicById(targetId);
-      var gname = target ? target['主题名'] : '';
-      confirmDialog('把「'+tname+'」合并到「'+gname+'」？其事件和关联会迁移到目标，源主题删除（原始记录保留）。', { title:'合并主题', okText:'合并', danger:true })
-        .then(function(ok){
-          if(!ok) return;
-          var r = obsTidyMerge(sourceId, targetId);
-          if (r.ok) { toast('已合并，迁移 '+r.migrated+' 条事件', 'success'); body.innerHTML = obsRenderTidyPanel(); refreshTidyToolbar(); }
-          else toast('合并失败：'+(r.error||''), 'danger');
-        });
-    }
-  }
-  function refreshTidyToolbar() {
-    var btn = document.getElementById('__v2aOpenTidy');
-    if (!btn) return;
-    var n = 0; try { n = obsListTidyTopics().length; } catch(e){}
-    btn.innerHTML = '待整理主题' + (n > 0 ? ' <span style="background:#FF9A8B;color:#fff;padding:1px 6px;border-radius:8px;margin-left:4px">' + n + '</span>' : '');
-  }
-
-  function renderObservatoryShell() {
-    var mod = currentMod;
-    $obsModRoot = document.getElementById('obsModRoot');
-    if ($obsModRoot) {
-      $obsModRoot.style.display = 'block';
-      var pendingCount = 0;
-      try { pendingCount = v2a_listLinks({ review_status: 'pending' }).length; } catch(e) {}
-      var tidyCount = 0;
-      try { tidyCount = obsListTidyTopics().length; } catch(e) {}
-      $obsModRoot.innerHTML =
-        '<div id="v2aObsToolbar" style="display:flex;justify-content:space-between;align-items:center;padding:9px 16px;background:linear-gradient(90deg,#FDEAF2,#F7F2FB);border-bottom:1px solid #E8DEF8">'+
-          '<div style="font-size:12px;color:#6E5B8C;font-weight:600">主题数据 · 本地优先</div>'+
-          '<div style="display:flex;gap:8px">'+
-            '<button class="v2a-btn v2a-btn-edit" id="__v2aOpenTidy">待整理主题' + (tidyCount > 0 ? ' <span style="background:#FF9A8B;color:#fff;padding:1px 6px;border-radius:8px;margin-left:4px">' + tidyCount + '</span>' : '') + '</button>'+
-            '<button class="v2a-btn v2a-btn-edit" id="__v2aOpenPrp">待确认关联' + (pendingCount > 0 ? ' <span style="background:#FFC78A;color:#fff;padding:1px 6px;border-radius:8px;margin-left:4px">' + pendingCount + '</span>' : '') + '</button>'+
-          '</div>'+
-        '</div>'+
-        '<div id="obsPageContent"></div>';
-      var openTidyBtn = document.getElementById('__v2aOpenTidy');
-      if (openTidyBtn) openTidyBtn.addEventListener('click', function(){ obsOpenTidyModal(); });
-      var openPrpBtn = document.getElementById('__v2aOpenPrp');
-      if (openPrpBtn) openPrpBtn.addEventListener('click', function(){ v2a_openPendingReviewModal(); });
-    }
-    var $c = document.getElementById('obsPageContent');
-    if (mod === 'obs_universe') renderObsUniverse($c);
-    else if (mod === 'obs_evolution') renderObsEvolution($c);
-    else if (mod === 'obs_conversion') renderObsConversion($c);
-    else if (mod === 'obs_connections') renderObsConnections($c);
-  }
-
-  function renderTopicProfile(topicId) {
-    var $c = document.getElementById('obsContent');
-    var t = topicById(topicId);
-    if (!t) {
-      $c.innerHTML = '<div class="empty">未找到该 Topic</div>';
-      return;
-    }
-    var d = topicDepth(topicId);
-    var m = topicMomentum(topicId, 30);
-    var prev = topicMomentum(topicId, 60) - m;
-    var trend = prev > 0 ? Math.round((m - prev) / prev * 100) : 0;
-    var stat = topicStatus(topicId);
-    var events = topicEvents().filter(function(e){return e['主题 ID']===topicId;}).sort(function(a,b){return (b['日期']||'').localeCompare(a['日期']||'');});
-    // Co-topic relations
-    var others = topicsList().filter(function(o){return o._id !== topicId;});
-    var rels = others.map(function(o){return {o: o, a: topicAssociation(topicId, o._id)};}).sort(function(x,y){return y.a-x.a;}).slice(0,5);
-    // 当前 Work
-    var srcSet = {}; events.forEach(function(e){if (!srcSet[e['来源表']]) srcSet[e['来源表']]=0; srcSet[e['来源表']]++;});
-    var html = '<div class="topic-profile">' +
-      '<div class="topic-hero">' +
-        '<h2 style="margin:0;font-size:28px;color:var(--c-purple-deep)">' + escapeHTML(t['主题名']) + '</h2>' +
-        '<div style="margin-top:6px">' + (t['别名'] ? '<span style="color:var(--c-muted);font-size:12px">别名：' + escapeHTML(t['别名']) + '</span>' : '') + '</div>' +
-        '<div style="display:flex;gap:8px;margin-top:14px;align-items:center">' +
-          '<span class="badge" style="background:' + STATUS_COLOR[stat] + ';color:#fff;padding:4px 12px;border-radius:999px;font-size:12px">' + STATUS_LABEL[stat] + '</span>' +
-          '<span style="font-size:13px;color:var(--c-muted)">Depth · ' + d.frontier + '</span>' +
-          '<span style="font-size:13px;color:var(--c-muted)">Momentum 30d: ' + m.toFixed(1) + '</span>' +
-          (trend !== 0 ? '<span style="font-size:13px;color:' + (trend>0?'var(--c-success)':'var(--c-danger)') + '">' + (trend>0?'↑':'↓') + Math.abs(trend) + '% vs prev</span>' : '') +
-        '</div>' +
-        '<div style="margin-top:14px;display:flex;gap:6px">' + STAGE_ORDER.map(function(st,i){
-          var c = d.counts[st].raw;
-          var fill = i<=d.frontierIdx;
-          return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px;border-radius:var(--r-md);background:' + (fill?'rgba(180,156,224,0.18)':'rgba(245,240,250,0.6)') + '">' +
-            '<span style="font-size:11px;color:var(--c-muted)">' + st.split(' ')[0] + '</span>' +
-            '<span style="font-size:18px;font-weight:700;color:var(--c-purple-deep)">' + c + '</span>' +
-          '</div>';
-        }).join('') + '</div>' +
-      '</div>' +
-      '<div class="topic-card"><div class="topbar"></div><h4 style="font-size:13px;color:var(--c-muted);text-transform:uppercase;letter-spacing:1px;margin:0 0 8px">⚡ 概览</h4>' + topicInsight(topicId) + '</div>' +
-      '<div class="topic-card"><div class="topbar"></div><h4 style="font-size:13px;color:var(--c-muted);text-transform:uppercase;letter-spacing:1px;margin:0 0 8px">Recent Activity</h4>' +
-        '<div style="font-size:12px;color:var(--c-muted);margin-bottom:8px">来源分布：' + Object.keys(srcSet).map(function(k){return k + ' × ' + srcSet[k];}).join(' · ') + '</div>' +
-        '<div>' + events.slice(0, 5).map(function(e){ return '<div class="legend-row"><span class="dot" style="background:' + (STATUS_COLOR[topicStatus(e['主题 ID'])]||'#B49CE0') + '"></span>' + e['日期'] + ' · ' + e['来源表'] + ' · ' + e['阶段'] + (e['主题角色']==='primary'?' · ★':'') + '</div>'; }).join('') + '</div>' +
-      '</div>' +
-      '<div class="topic-card"><div class="topbar"></div><h4 style="font-size:13px;color:var(--c-muted);text-transform:uppercase;letter-spacing:1px;margin:0 0 8px">Related Topics</h4>' +
-        rels.map(function(r){ return '<div class="legend-row"><strong>' + escapeHTML(r.o['主题名']) + '</strong><span style="margin-left:auto;color:var(--c-purple-deep);font-weight:700">' + (r.a*100).toFixed(0) + '%</span></div>'; }).join('') +
-      '</div>' +
-      '<div class="topic-card"><div class="topbar"></div><h4 style="font-size:13px;color:var(--c-muted);text-transform:uppercase;letter-spacing:1px;margin:0 0 8px">Knowledge Funnel（Activity）</h4>' +
-        renderTopicProfileFunnelHtml(topicId) +
-      '</div>' +
-      '<div style="margin-top:20px"><button class="btn btn-ghost" id="backToObs">← 返回 Observatory</button></div>' +
-    '</div>';
-    $c.innerHTML = html;
-    document.getElementById('backToObs').addEventListener('click', function(){ window.location.hash = ''; renderObservatory(); });
-  }
-  function renderTopicProfileFunnelHtml(topicId) {
-    var f = topicFunnel(topicId);
-    var html = '<div style="margin-top:6px">';
-    STAGE_ORDER.forEach(function(s){
-      html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 0"><span style="min-width:130px;font-size:12px">' + s + '</span><div style="flex:1;height:14px;background:#F5F0FA;border-radius:4px;position:relative"><div style="position:absolute;left:0;top:0;bottom:0;width:' + Math.min(100, (f[s]||0) * 20) + '%;background:var(--c-purple);border-radius:4px"></div></div><span style="min-width:36px;text-align:right;font-size:12px;font-weight:700">' + (f[s]||0) + '</span></div>';
-    });
-    html += '</div>';
-    return html;
-  }
-
-  function handleObsHash() {
-    var h = window.location.hash || '';
-    var m = h.match(/^#obs\/topic\/(.+)$/);
-    if (m) {
-      renderObservatory();
-      var $c = document.getElementById('obsContent');
-      if ($c) renderTopicProfile(m[1]);
-      return true;
-    }
-    return false;
-  }
-  // 监听 hash 变化
-  if (typeof window !== 'undefined') {
-    window.addEventListener('hashchange', handleObsHash);
-  }
-
-  function topicInsight(topicId) {
-    var t = topicById(topicId);
-    if (!t) return '';
-    var d = topicDepth(topicId);
-    var m = topicMomentum(topicId,30);
-    var prev = topicMomentum(topicId,60) - m;
-    var trend = prev > 0 ? ((m - prev) / prev * 100) : 0;
-    var stat = topicStatus(topicId);
-    var out = '';
-    out += '数据显示 ' + t['主题名'] + ' 最近 30 天 momentum ' + (trend >= 0 ? '↑' : '↓') + Math.abs(Math.round(trend)) + '%, '
-    out += '当前 Depth · ' + d.frontier + '，状态归为 ' + STATUS_LABEL[stat] + '。';
-    out += '可以进一步观察：是否同步在相关领域也出现这种 momentum。';
-    return out;
-  }
-  function topicObsDummy() {
-
-    var t = topicById(topicId);
-    if (!t) return '';
-    var d = topicDepth(topicId);
-    var m = topicMomentum(topicId,30);
-    var prev = topicMomentum(topicId,60) - m;
-    var trend = prev > 0 ? ((m - prev) / prev * 100) : 0;
-    var stat = topicStatus(topicId);
-    var out = '';
-    out += '数据显示 ' + t['主题名'] + ' 最近 30 天 momentum ' + (trend >= 0 ? '↑' : '↓') + Math.abs(Math.round(trend)) + '%';
-    out += '，当前 Depth · ' + d.frontier;
-    out += '，状态归为 ' + STATUS_LABEL[stat] + '。';
-    out += '可以进一步观察：是否同步在相关领域也出现这种 momentum。';
-    return out;
   }
 
   var storeState = {
@@ -7808,9 +6901,7 @@
       key: 'obs', label: '主题发展', emoji: '✦',
       children: [
         {key:'obs_universe',   label:'主题发展',   icon: SVG.overview},
-        {key:'obs_connections',label:'关系探索',   icon: SVG.connections},
-        {key:'obs_evolution',  label:'演化趋势',   icon: SVG.trend},
-        {key:'obs_conversion', label:'知识转化',   icon: SVG.project}
+        {key:'obs_connections',label:'关系探索',   icon: SVG.connections}
       ]
     }
   ];
@@ -8403,7 +7494,7 @@
     else if (key === 'work:projects') renderProjectsMod();
     else if (key === 'meta:weekly') renderWeeklyMod();
     else if (key === 'meta:inbox') renderInboxMod();
-    else if (key === 'obs:obs_universe' || key === 'obs:obs_evolution' || key === 'obs:obs_conversion' || key === 'obs:obs_connections') {
+    else if (key === 'obs:obs_universe' || key === 'obs:obs_connections') {
       // V6: 群组 obs 切到 modRoot 子区
       $obsModRoot = document.getElementById('obsModRoot');
       var $mod = document.getElementById('modRoot');
@@ -10487,19 +9578,16 @@
         showView('group');
       });
       /* V6: expose API for debug / test */
-      /* V7: 事件委托：data-open-gov → openGovernanceModal */
+      /* 事件委托：data-open-gov → openGovernanceModal（数据治理台入口） */
       document.addEventListener('click', function(e){
         var t = e.target && e.target.closest && e.target.closest('[data-open-gov]');
         if (t && typeof openGovernanceModal === 'function') openGovernanceModal();
       });
-      /* V7: data-lineage-confirm/reject 在 renderLineageSection 内 setTimeout 绑定 */
 
       window.__v5 = {
         topicsList: topicsList,
         topicById: topicById,
         topicEvents: topicEvents,
-        renderTopicProfile: renderTopicProfile,
-        handleObsHash: handleObsHash,
         findTopicByName: findTopicByName,
         openGovernanceModal: openGovernanceModal
       };
