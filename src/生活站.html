@@ -4694,6 +4694,109 @@
   }
 
   /* ============================================================
+     第二轮优化 第二期：待整理主题（合并 / 保留 / 移除）
+     - 候选 = 主表 topics 里 _auto===true 的标题型自动主题
+     - 只清理「主题 + 自动规则产生的事件」，永不删除原始记录
+     ============================================================ */
+  function obsListTidyTopics() {
+    var all = (storeState.tableRecords.topics || []);
+    return all.filter(function(t){ return t && t['主题名'] && t._auto === true; });
+  }
+  function obsTidyStats(topicId) {
+    var events = (storeState.tableRecords.topic_events || []).filter(function(e){ return e && e['主题 ID'] === topicId; });
+    var sourceTitles = [];
+    events.forEach(function(e){
+      var rec = obsFindSourceRecord(e);
+      var title = obsRecordTitle(e['来源表'], rec);
+      if (title && sourceTitles.indexOf(title) < 0) sourceTitles.push(title);
+    });
+    return { eventCount: events.length, sourceTitles: sourceTitles };
+  }
+  // 保留为主题：_auto 移除 → 治理状态 active，正常进入星图/贡献
+  function obsTidyKeep(topicId) {
+    var topics = storeState.tableRecords.topics || [];
+    var target = null;
+    for (var i = 0; i < topics.length; i++) if (topics[i]._id === topicId) { target = topics[i]; break; }
+    if (!target) return { ok: false, error: 'not_found' };
+    if (target._auto) delete target._auto;
+    target['治理状态'] = 'active';
+    if (!target['分析状态'] || target['分析状态'] === 'Emerging') target['分析状态'] = 'Developing';
+    if (target['说明'] && String(target['说明']).indexOf('自动生成') >= 0) target['说明'] = '用户确认保留';
+    saveLocal('topics');
+    supaSilentWrite('update', 'topics', target);
+    return { ok: true };
+  }
+  // 移除主题：只删主题 + 关联事件 + 影子存储，不删原始记录
+  function obsTidyRemove(topicId) {
+    var recs = storeState.tableRecords;
+    var topicsBefore = (recs.topics || []).length;
+    var evBefore = (recs.topic_events || []).length;
+    recs.topics = (recs.topics || []).filter(function(t){ return t._id !== topicId; });
+    recs.topic_events = (recs.topic_events || []).filter(function(e){ return e['主题 ID'] !== topicId; });
+    // 影子存储同步清理
+    try {
+      var store = v25_loadStore();
+      store.topics = (store.topics || []).filter(function(t){ return t._id !== topicId; });
+      store.topic_links = (store.topic_links || []).filter(function(l){ return l.topic_id !== topicId; });
+      store.topic_events = (store.topic_events || []).filter(function(e){ return e.topic_id !== topicId; });
+      v25_saveStore(store);
+    } catch(_){}
+    if ((recs.topics || []).length !== topicsBefore) { saveLocal('topics'); supaSilentWrite('delete', 'topics', topicId); }
+    if ((recs.topic_events || []).length !== evBefore) saveLocal('topic_events');
+    return { ok: true };
+  }
+  // 合并主题：fromId 事件/关联迁移到 toId，别名合并，源主题删除
+  function obsTidyMerge(fromId, toId) {
+    if (!fromId || !toId || fromId === toId) return { ok: false, error: 'invalid_ids' };
+    var recs = storeState.tableRecords;
+    var topics = recs.topics || [];
+    var from = null, to = null;
+    for (var i = 0; i < topics.length; i++) {
+      if (topics[i]._id === fromId) from = topics[i];
+      if (topics[i]._id === toId) to = topics[i];
+    }
+    if (!from) return { ok: false, error: 'source_not_found' };
+    if (!to) return { ok: false, error: 'target_not_found' };
+    // 1) 别名合并：源主题名 + 源别名 → 目标别名
+    var aliasSet = String(to['别名'] || '').split(/[,，]/).map(function(s){ return s.trim(); }).filter(Boolean);
+    [from['主题名']].concat(String(from['别名'] || '').split(/[,，]/)).forEach(function(a){
+      a = String(a).trim();
+      if (a && aliasSet.indexOf(a) < 0 && a !== to['主题名']) aliasSet.push(a);
+    });
+    to['别名'] = aliasSet.join(',');
+    // 2) 主表事件迁移（三元组「来源表|来源记录ID|主题ID」去重）
+    var dupKey = function(e){ return (e['来源表'] || '') + '|' + (e['来源记录 ID'] || '') + '|' + (e['主题 ID'] || ''); };
+    var dupSet = {};
+    recs.topic_events.forEach(function(e){ dupSet[dupKey(e)] = true; });
+    var migrated = 0, newEvents = [];
+    recs.topic_events.forEach(function(e){
+      if (e['主题 ID'] === fromId) {
+        e['主题 ID'] = toId;
+        var key = dupKey(e);
+        if (dupSet[key]) { /* 目标已有同三元组事件 → 丢弃重复 */ }
+        else { dupSet[key] = true; migrated++; newEvents.push(e); }
+      } else {
+        newEvents.push(e);
+      }
+    });
+    recs.topic_events = newEvents;
+    // 3) 删除源主题
+    recs.topics = topics.filter(function(t){ return t._id !== fromId; });
+    // 4) 影子存储 topic_id 迁移
+    try {
+      var store = v25_loadStore();
+      (store.topic_links || []).forEach(function(l){ if (l.topic_id === fromId) l.topic_id = toId; });
+      (store.topic_events || []).forEach(function(e){ if (e.topic_id === fromId) e.topic_id = toId; });
+      store.topics = (store.topics || []).filter(function(t){ return t._id !== fromId; });
+      v25_saveStore(store);
+    } catch(_){}
+    saveLocal('topics'); saveLocal('topic_events');
+    supaSilentWrite('update', 'topics', to);
+    supaSilentWrite('delete', 'topics', fromId);
+    return { ok: true, migrated: migrated };
+  }
+
+  /* ============================================================
      V5.5 Observatory UI: 4 Tab + Topic Profile + Settings
      ============================================================ */
   var $obsRoot = null; // lazy
@@ -6194,6 +6297,124 @@
     var detail=document.getElementById('growthRelationshipDetail'),fi=scoreMap[focus._id],top=related[0];detail.innerHTML='<div class="growth-detail" style="margin:0;height:100%"><div class="growth-detail-title"><strong>'+escapeHTML(focus['主题名'])+'</strong></div><p style="font-size:12px;color:var(--c-muted);line-height:1.6">节点大小代表本期贡献，颜色深浅代表近期变化，连线粗细代表共同完成记录数。</p><div class="growth-kpi"><b>'+((fi&&fi.score)||0).toFixed(1)+'</b><span>本期贡献分</span></div>'+(top?'<div class="growth-opportunity" style="margin-top:10px"><strong>最常共同出现</strong><p>'+escapeHTML((top.a._id===focus._id?top.b:top.a)['主题名'])+' · '+top.count+' 条共同记录</p></div>':'<div class="growth-empty">暂无关系证据</div>')+'</div>';
   }
 
+  /* ============================================================
+     待整理主题 UI（合并 / 保留 / 移除）
+     ============================================================ */
+  function obsFormalTopics(excludeId) {
+    return topicsList().filter(function(t){
+      return !t._auto && t._id !== excludeId && t['治理状态'] !== 'archived' && t['治理状态'] !== 'merged';
+    });
+  }
+  function obsRenderTidyPanel() {
+    var cands = obsListTidyTopics();
+    if (!cands.length) {
+      return '<div style="text-align:center;padding:32px 12px;color:var(--c-muted)">没有待整理主题。标题型自动主题已全部处理完毕 ✓</div>';
+    }
+    var formal = obsFormalTopics(null);
+    var html = '<p style="font-size:12px;color:var(--c-muted);line-height:1.6;margin:0 0 14px">以下是早期从记录标题自动生成的主题（已停止自动生成）。请逐一决定：<b>合并</b>到正式主题（避免重复）、<b>保留</b>为长期方向，或<b>移除</b>（不影响原始记录）。</p>';
+    cands.forEach(function(t){
+      var stats = obsTidyStats(t._id);
+      var src = stats.sourceTitles.slice(0, 3).map(function(s){ return escapeHTML(s); }).join('、');
+      html += '<div class="v2a-prp-card" style="border-color:#FFC9BF">'+
+        '<div class="v2a-prp-row1"><div class="v2a-prp-topic">'+escapeHTML(t['主题名'])+'</div><span class="v2a-badge" style="background:#FFE8E3;color:#E0644F">自动生成</span></div>'+
+        '<div class="v2a-prp-row2"><span class="v2a-prp-rec">'+stats.eventCount+' 条事件'+(src?' · 来源：'+src:'')+'</span></div>'+
+        '<div class="v2a-prp-actions">'+
+          '<button class="v2a-btn v2a-btn-edit" data-tidy-act="toggle-merge" data-tidy-id="'+escapeHTML(t._id)+'">⇄ 合并</button>'+
+          '<button class="v2a-btn v2a-btn-confirm" data-tidy-act="keep" data-tidy-id="'+escapeHTML(t._id)+'">✓ 保留</button>'+
+          '<button class="v2a-btn v2a-btn-reject" data-tidy-act="remove" data-tidy-id="'+escapeHTML(t._id)+'">✗ 移除</button>'+
+        '</div>'+
+        '<div id="__tidyMerge_'+escapeHTML(t._id)+'" style="display:none;margin-top:10px;padding:10px;background:rgba(255,255,255,0.6);border:1px solid var(--c-line);border-radius:10px">'+
+          '<div style="font-size:12px;color:#6E5B8C;margin-bottom:6px">合并到：</div>'+
+          '<select id="__tidySel_'+escapeHTML(t._id)+'" style="width:100%;padding:7px 9px;border:1px solid var(--c-line);border-radius:8px;font-size:13px;font-family:inherit;margin-bottom:6px">'+
+            (formal.length ? formal.map(function(f){ return '<option value="'+escapeHTML(f._id)+'">'+escapeHTML(f['主题名'])+'</option>'; }).join('') : '<option value="">（暂无正式主题，请在下方输入新主题名）</option>')+
+          '</select>'+
+          '<input id="__tidyInput_'+escapeHTML(t._id)+'" placeholder="或输入新主题名，回车/点确认" style="width:100%;padding:7px 9px;border:1px solid var(--c-line);border-radius:8px;font-size:13px;font-family:inherit;margin-bottom:8px">'+
+          '<button class="v2a-btn v2a-btn-confirm" data-tidy-act="confirm-merge" data-tidy-id="'+escapeHTML(t._id)+'">确认合并</button>'+
+        '</div>'+
+      '</div>';
+    });
+    return html;
+  }
+  function obsOpenTidyModal() {
+    var html = '<div class="modal-bg" id="__tidyBg">'+
+      '<div class="modal" style="max-width:680px;max-height:80vh;overflow-y:auto">'+
+        '<div class="topbar"></div>'+
+        '<h3>🧹 待整理主题</h3>'+
+        '<div id="__tidyBody">' + obsRenderTidyPanel() + '</div>'+
+        '<div class="form-actions">'+
+          '<button type="button" class="btn btn-ghost" id="__tidyClose">关闭</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+    $modalRoot.innerHTML = html;
+    var bg = document.getElementById('__tidyBg');
+    document.getElementById('__tidyClose').addEventListener('click', function(){ $modalRoot.innerHTML = ''; });
+    var body = document.getElementById('__tidyBody');
+    body.addEventListener('click', function(ev){
+      var t = ev.target;
+      while (t && t !== body) {
+        var act = t.getAttribute && t.getAttribute('data-tidy-act');
+        if (act) {
+          var tid = t.getAttribute('data-tidy-id');
+          var topic = topicById(tid);
+          var name = topic ? topic['主题名'] : '';
+          if (act === 'keep') {
+            var r = obsTidyKeep(tid);
+            if (r.ok) { toast('已保留主题「'+name+'」', 'success'); body.innerHTML = obsRenderTidyPanel(); refreshTidyToolbar(); }
+            else toast('操作失败：'+(r.error||''), 'danger');
+          } else if (act === 'remove') {
+            confirmDialog('移除主题「'+name+'」及其事件（原始记录不受影响），确定？', { title:'移除主题', okText:'移除', danger:true })
+              .then(function(ok){ if(!ok) return; var r = obsTidyRemove(tid); if (r.ok) { toast('已移除主题「'+name+'」', 'success'); body.innerHTML = obsRenderTidyPanel(); refreshTidyToolbar(); } });
+          } else if (act === 'toggle-merge') {
+            var box = document.getElementById('__tidyMerge_'+tid);
+            if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
+          } else if (act === 'confirm-merge') {
+            var sel = document.getElementById('__tidySel_'+tid);
+            var inp = document.getElementById('__tidyInput_'+tid);
+            var newName = inp ? inp.value.trim() : '';
+            var targetId = sel && sel.value ? sel.value : '';
+            if (newName) {
+              // 输入新主题名：先创建正式主题，再合并
+              var existing = findTopicByName(newName);
+              if (existing && existing._id !== tid) { targetId = existing._id; doMerge(tid, targetId); }
+              else if (existing && existing._id === tid) { toast('新主题名不能与源主题同名', 'danger'); }
+              else {
+                Store.addRecord('topics', { '主题名': newName, '别名': '', '类型': topic ? topic['类型'] : '领域', '说明': '合并时创建', '创建时间': todayStr(), '治理状态': 'active', '分析状态': 'Developing' })
+                  .then(function(nr){ doMerge(tid, nr._id); })
+                  .catch(function(err){ toast('创建失败：'+(err&&err.message||err), 'danger'); });
+              }
+            } else if (targetId) {
+              doMerge(tid, targetId);
+            } else {
+              toast('请选择目标主题或输入新主题名', 'danger');
+            }
+          }
+          return;
+        }
+        t = t.parentNode;
+      }
+    });
+    function doMerge(sourceId, targetId) {
+      var topic = topicById(sourceId);
+      var tname = topic ? topic['主题名'] : '';
+      var target = topicById(targetId);
+      var gname = target ? target['主题名'] : '';
+      confirmDialog('把「'+tname+'」合并到「'+gname+'」？其事件和关联会迁移到目标，源主题删除（原始记录保留）。', { title:'合并主题', okText:'合并', danger:true })
+        .then(function(ok){
+          if(!ok) return;
+          var r = obsTidyMerge(sourceId, targetId);
+          if (r.ok) { toast('已合并，迁移 '+r.migrated+' 条事件', 'success'); body.innerHTML = obsRenderTidyPanel(); refreshTidyToolbar(); }
+          else toast('合并失败：'+(r.error||''), 'danger');
+        });
+    }
+  }
+  function refreshTidyToolbar() {
+    var btn = document.getElementById('__v2aOpenTidy');
+    if (!btn) return;
+    var n = 0; try { n = obsListTidyTopics().length; } catch(e){}
+    btn.innerHTML = '待整理主题' + (n > 0 ? ' <span style="background:#FF9A8B;color:#fff;padding:1px 6px;border-radius:8px;margin-left:4px">' + n + '</span>' : '');
+  }
+
   function renderObservatoryShell() {
     var mod = currentMod;
     $obsModRoot = document.getElementById('obsModRoot');
@@ -6201,14 +6422,19 @@
       $obsModRoot.style.display = 'block';
       var pendingCount = 0;
       try { pendingCount = v2a_listLinks({ review_status: 'pending' }).length; } catch(e) {}
+      var tidyCount = 0;
+      try { tidyCount = obsListTidyTopics().length; } catch(e) {}
       $obsModRoot.innerHTML =
         '<div id="v2aObsToolbar" style="display:flex;justify-content:space-between;align-items:center;padding:9px 16px;background:linear-gradient(90deg,#FDEAF2,#F7F2FB);border-bottom:1px solid #E8DEF8">'+
           '<div style="font-size:12px;color:#6E5B8C;font-weight:600">主题数据 · 本地优先</div>'+
           '<div style="display:flex;gap:8px">'+
+            '<button class="v2a-btn v2a-btn-edit" id="__v2aOpenTidy">待整理主题' + (tidyCount > 0 ? ' <span style="background:#FF9A8B;color:#fff;padding:1px 6px;border-radius:8px;margin-left:4px">' + tidyCount + '</span>' : '') + '</button>'+
             '<button class="v2a-btn v2a-btn-edit" id="__v2aOpenPrp">待确认关联' + (pendingCount > 0 ? ' <span style="background:#FFC78A;color:#fff;padding:1px 6px;border-radius:8px;margin-left:4px">' + pendingCount + '</span>' : '') + '</button>'+
           '</div>'+
         '</div>'+
         '<div id="obsPageContent"></div>';
+      var openTidyBtn = document.getElementById('__v2aOpenTidy');
+      if (openTidyBtn) openTidyBtn.addEventListener('click', function(){ obsOpenTidyModal(); });
       var openPrpBtn = document.getElementById('__v2aOpenPrp');
       if (openPrpBtn) openPrpBtn.addEventListener('click', function(){ v2a_openPendingReviewModal(); });
     }
