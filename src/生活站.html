@@ -414,6 +414,10 @@
   }
   .today-cross-item.overdue { border-color: var(--c-danger); background: rgba(255,137,168,0.10); }
   .today-cross-item .src { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(180,156,224,0.18); color: var(--c-purple-deep); }
+  /* v2h: 主页近期动态两栏（近期完成 + 活跃主题） */
+  .dash-insights { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+  .dash-panel { margin-bottom: 0; }
+  .dash-panel .growth-timeline { padding-top: 2px; }
   .today-cross-item .src.work { background: rgba(152,136,184,0.20); color: #6E5B8C; }
   .today-cross-item .src.learn { background: rgba(158,191,232,0.20); color: #4A6A8C; }
   .today-cross-item .src.meta { background: rgba(127,200,169,0.20); color: #3F7D5D; }
@@ -938,6 +942,10 @@
     .boards-grid { grid-template-columns: 1fr; }
     .dash-hero-grid { grid-template-columns: 1fr; }
     .dash-kpis { grid-template-columns: 1fr 1fr; }
+    .dash-insights { grid-template-columns: 1fr; }
+    .dash-ring { width: 140px; height: 140px; }
+    .growth-timeline-date { width: 40px; font-size: 10px; }
+    .today-cross-item { gap: 8px; }
     /* sidebar 改成图标条而非隐藏 —— 群组切换还要用 */
     .sidebar { width: 60px; padding: 12px 4px; }
     .sidebar .side-label,
@@ -1076,6 +1084,17 @@
   .v2a-role-chip.v2a-role-supporting { background: #DCD3EC; color: #6E5B8C; }
   .v2a-ambient-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; color: #8977A6; border: 1px dashed #B49CE0; background: rgba(247,240,251,0.4); margin: 2px 4px 2px 0; }
   .v2a-ambient-details { margin-top: 4px; }
+  /* v2h 关联项 picker */
+  .v2h-link-picker { display: flex; flex-direction: column; gap: 8px; }
+  .v2h-link-selected { display: flex; flex-wrap: wrap; gap: 6px; }
+  .v2h-link-selected:empty { display: none; }
+  .v2h-selected-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 12px; background: #6E5B8C; color: #fff; font-size: 12px; }
+  .v2h-selected-chip button { border: none; background: rgba(255,255,255,0.25); color: #fff; border-radius: 50%; width: 16px; height: 16px; line-height: 1; font-size: 11px; cursor: pointer; padding: 0; }
+  .v2h-link-group { border: 1px solid rgba(180,156,224,0.35); border-radius: 10px; padding: 6px 10px; }
+  .v2h-link-group summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #6E5B8C; }
+  .v2h-link-search { width: 100%; margin: 6px 0; padding: 5px 9px; border: 1px solid rgba(180,156,224,0.4); border-radius: 8px; font-size: 12px; }
+  .v2h-link-items { display: flex; flex-wrap: wrap; gap: 6px; max-height: 132px; overflow-y: auto; }
+  .v2h-link-empty { color: var(--c-muted); font-size: 12px; padding: 4px 0; }
   .v2a-ambient-details summary { list-style: none; }
   .v2a-ambient-details summary::-webkit-details-marker { display: none; }
   .v2a-ambient-list { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -1255,11 +1274,33 @@
             <div class="dash-kpis">
               <div class="dash-kpi"><div class="l">已过去</div><div class="v" id="kDays">0%</div><div class="s" id="kDaysSub">—</div></div>
               <div class="dash-kpi"><div class="l">关键节点</div><div class="v" id="kMilestones">0 / 0</div><div class="s">已完成 / 总数</div></div>
-              <div class="dash-kpi"><div class="l">本周任务</div><div class="v" id="kWeekDone">0</div><div class="s">已完成</div></div>
-              <div class="dash-kpi"><div class="l">习惯打卡</div><div class="v" id="kHabits">0</div><div class="s">近 7 天</div></div>
               <div class="dash-kpi"><div class="l">本周支出</div><div class="v" id="kSpend">¥0</div><div class="s">CNY</div></div>
-              <div class="dash-kpi"><div class="l">P0/P1 项目</div><div class="v" id="kP0">0</div><div class="s">进行中</div></div>
             </div>
+          </div>
+        </div>
+
+        <div class="boards-head">
+          <h2>今日待办</h2>
+        </div>
+        <div class="today-cross">
+          <div class="topbar"></div>
+          <h2 id="todayCrossTitle">全模块 · 今日待处理</h2>
+          <div class="today-cross-list" id="todayCrossList"></div>
+        </div>
+
+        <div class="boards-head">
+          <h2>近期动态</h2>
+        </div>
+        <div class="dash-insights">
+          <div class="today-cross dash-panel">
+            <div class="topbar"></div>
+            <h2>近期完成 <small id="dashTimelineSub" style="font-weight:400;color:var(--c-muted);font-size:11px">已完成记录 · 点击可编辑</small></h2>
+            <div class="growth-timeline" id="dashTimeline"></div>
+          </div>
+          <div class="today-cross dash-panel">
+            <div class="topbar"></div>
+            <h2>活跃主题 <small style="font-weight:400;color:var(--c-muted);font-size:11px">近 30 天贡献 Top 3</small></h2>
+            <div id="dashTopTopics"></div>
           </div>
         </div>
 
@@ -1268,15 +1309,6 @@
           <span class="meta" id="boardsMeta">点击卡片进入板块</span>
         </div>
         <div class="boards-grid" id="boardsGrid"></div>
-
-        <div class="boards-head">
-          <h2>今天 · 跨模块</h2>
-        </div>
-        <div class="today-cross">
-          <div class="topbar"></div>
-          <h2 id="todayCrossTitle">5 类源合并 · 今日待处理</h2>
-          <div class="today-cross-list" id="todayCrossList"></div>
-        </div>
       </section>
 
       <!-- === Group shell (群组 detail) === -->
@@ -1522,6 +1554,7 @@
       {name:'标题', type:'text', required:true},
       {name:'状态', type:'select', options:['待办','已完成','已搁置']},
       {name:'优先级', type:'select', options:['P0','P1','P2']},
+      {name:'关联项', type:'record-link'},
       {name:'关联计划', type:'text'},
       {name:'关联课程', type:'text'},
       {name:'备注', type:'textarea'}
@@ -1532,6 +1565,7 @@
       {name:'时段', type:'select', options:['早','中','晚','自定义']},
       {name:'单位', type:'text'},
       {name:'目标/天', type:'number'},
+      {name:'关联项', type:'record-link'},
       {name:'关联计划', type:'text'},
       {name:'颜色', type:'select', options:['紫','粉','蓝','绿','橙']},
       {name:'启用', type:'checkbox'}
@@ -1547,6 +1581,7 @@
       {name:'标题', type:'text', required:true},
       {name:'内容', type:'textarea'},
       {name:'标签', type:'text'},
+      {name:'关联项', type:'record-link'},
       {name:'关联计划', type:'text'},
       {name:'关联课程', type:'text'}
     ],
@@ -3033,6 +3068,8 @@
       for (var i = 0; i < legacy.length; i++) {
         var lt = legacy[i];
         if (!lt || !lt._id) continue;
+        // _auto 标题型主题（历史自动生成）只出现在「待整理主题」面板，不进任何选择器/分析
+        if (lt._auto === true) continue;
         addOne(lt._id, lt['主题名'] || '', lt['类型'] || '领域', lt['别名'] || '');
       }
     } catch(_){}
@@ -3042,6 +3079,7 @@
       for (var j = 0; j < (store.topics || []).length; j++) {
         var t = store.topics[j];
         if (!t || !t._id || !t.name) continue;
+        if (t._auto === true) continue; // 防御：影子存储侧同样排除 _auto
         // 如果 v25 topic 是从主表迁移来的（source_topic_id 与主表某条 _id 相同），跳过（已用主表 _id 表示）
         if (t.source_topic_id && seenById[t.source_topic_id]) continue;
         addOne(t._id, t.name, t.type || '', t.aliases || '');
@@ -3123,24 +3161,36 @@
     }
     function resolveParents(rt, rid) {
       var parents = [];
-      if (rt === 'study_tasks' || rt === 'today_tasks' || rt === 'study_notes' || rt === 'media') {
-        var r = v2a_fetchRecord(rt, rid);
-        if (r) {
-          // 关联计划 / 关联项目 / 关联课程（不同表不同字段）
-          var planId = r['关联计划'] || r['关联项目'] || r['parent_id'];
-          if (planId) {
-            // 推测 parent 类型
-            ['projects','year_plan','courses'].forEach(function(pt){
-              var found = (storeState.tableRecords[pt] || []).find(function(p){ return String(p._id) === String(planId); });
-              if (found) parents.push({ type: pt, id: found._id });
+      var r = v2a_fetchRecord(rt, rid);
+      if (r) {
+        // 首选：结构化「关联项」（JSON 数组 [{t,id}]，v2h 引入）
+        try {
+          var arr = JSON.parse(r['关联项'] || '[]');
+          if (Array.isArray(arr)) {
+            arr.forEach(function(l){
+              if (l && l.t && l.id && ['year_plan','projects','courses'].indexOf(l.t) >= 0) {
+                parents.push({ type: l.t, id: l.id });
+              }
             });
           }
+        } catch(_) {}
+        // 兜底：旧文本 关联计划/关联课程（历史语义二义：可能是标题，也可能是记录 _id）
+        if (!parents.length) {
+          ['关联计划','关联课程','关联项目'].forEach(function(fname){
+            var txt = r[fname];
+            if (!txt) return;
+            var t = String(txt).trim().toLowerCase();
+            if (!t) return;
+            [['year_plan','标题'],['courses','课程名'],['projects','项目名']].forEach(function(pair){
+              (storeState.tableRecords[pair[0]] || []).forEach(function(p){
+                if (!p || !p._id) return;
+                var byId = String(p._id).toLowerCase() === t;
+                var byName = p[pair[1]] && String(p[pair[1]]).trim().toLowerCase() === t;
+                if (byId || byName) parents.push({ type: pair[0], id: p._id });
+              });
+            });
+          });
         }
-      }
-      // note 可能引用项目
-      if (rt === 'study_notes') {
-        var n = v2a_fetchRecord('study_notes', rid);
-        if (n && n['关联项目']) parents.push({ type: 'projects', id: n['关联项目'] });
       }
       return parents;
     }
@@ -3400,21 +3450,32 @@
     var $existing = $form.querySelector('.v2a-container');
     if ($existing) $existing.remove();
     var sections = [];
+    var linkHtml = '';
+    // v2h 关联项选择器：三类子记录表，新建+编辑态都渲染（编辑态回填）
+    if (V2H_LINK_TABLES.indexOf(record_type) >= 0) {
+      try { linkHtml = v2h_renderRecordLinkPicker(record_type, record_id); } catch(e) { linkHtml = ''; }
+    }
+    var hasTopicSection = false;
     if (v2a_shouldUsePicker(record_type, record_id)) {
       sections.push(v2a_renderTopicContextPicker(record_type, record_id));
+      hasTopicSection = true;
     } else if (record_type === 'today_tasks' || record_type === 'study_tasks' ||
         record_type === 'study_notes' || record_type === 'study_habits' || record_type === 'media') {
       sections.push(v2a_renderTopicChips(record_type, record_id));
+      hasTopicSection = true;
     }
     if (record_type === 'today_tasks' || record_type === 'study_tasks' || record_type === 'study_habits') {
       sections.push(v2a_renderNatureSelector(record_type, record_id));
     }
-    if (sections.length === 0) return;
+    if (sections.length === 0 && !linkHtml) return;
+    var wrapHtml = '';
+    if (linkHtml) wrapHtml += '<div class="v2a-divider">关联到（可选）</div>' + linkHtml;
+    if (sections.length) wrapHtml += '<div class="v2a-divider">主题（可选）</div>' + sections.join('');
     var $wrap = document.createElement('div');
     $wrap.className = 'v2a-container';
     $wrap.setAttribute('data-v2a-record-type', record_type);
     $wrap.setAttribute('data-v2a-record-id', record_id);
-    $wrap.innerHTML = '<div class="v2a-divider">主题（可选）</div>' + sections.join('');
+    $wrap.innerHTML = wrapHtml;
     // 基础字段之后、高级设置之前：先完成记录本身，再按需关联主题
     var $advanced = $form.querySelector('.modal-advanced');
     if ($advanced) $form.insertBefore($wrap, $advanced);
@@ -3458,6 +3519,238 @@
         });
       }
     });
+    // v2h 关联项 picker 事件（勾选/移除/搜索 → 同步 hidden input）
+    try { v2h_bindRecordLinkEvents($form, $wrap); } catch(e) {}
+  }
+
+  /* ============================================================
+     v2h: 通用关联选择器（关联项）+ 主题自动继承 + 一次性迁移
+     「关联项」数据格式：JSON 数组 [{t:'year_plan',id:'...'},...]
+     主题继承只走 year_plan/projects/courses 一层（任务不继承 → 环保护）
+     ============================================================ */
+  var V2H_LINK_TABLES = ['study_tasks', 'study_habits', 'study_notes'];
+  var V2H_PARENT_TYPES = ['year_plan', 'projects', 'courses'];
+
+  function v2h_parseLinks(val) {
+    try {
+      var arr = JSON.parse(val || '[]');
+      if (!Array.isArray(arr)) return [];
+      return arr.filter(function(l){ return l && l.t && l.id; })
+        .map(function(l){ return { t: String(l.t), id: String(l.id) }; });
+    } catch(_) { return []; }
+  }
+
+  // 关联目标数据源（四组）：计划 / 项目 / 课程 / 任务
+  function v2h_listLinkTargets() {
+    var R = (typeof storeState !== 'undefined' && storeState.tableRecords) || {};
+    function lst(table, titleField, group) {
+      return (R[table] || []).filter(function(r){ return r && r._id; }).map(function(r){
+        return { t: table, id: r._id, title: String(r[titleField] || '(未命名)'), group: group };
+      });
+    }
+    return [].concat(
+      lst('year_plan', '标题', '计划'),
+      lst('projects', '项目名', '项目'),
+      lst('courses', '课程名', '课程'),
+      lst('study_tasks', '标题', '任务'),
+      lst('today_tasks', '标题', '任务')
+    );
+  }
+
+  function v2h_renderRecordLinkPicker(record_type, record_id) {
+    var current = {};
+    // 编辑态回填：优先真实记录；新建态无真实记录，hidden input 的初始值即回填源
+    var rec = (record_id && record_id !== '__new__') ? v2a_fetchRecord(record_type, record_id) : null;
+    var raw = (rec && rec['关联项']) || '';
+    v2h_parseLinks(raw).forEach(function(l){ current[l.t + '|' + l.id] = l; });
+    var targets = v2h_listLinkTargets();
+    function chipHtml(tg) {
+      var on = !!current[tg.t + '|' + tg.id];
+      return '<label class="v2a-chip v2h-link-chip' + (on ? ' on' : '') + '">' +
+        '<input type="checkbox" data-v2h-link="' + escapeHTML(tg.t + '|' + tg.id) + '"' + (on ? ' checked' : '') + '> ' +
+        escapeHTML(tg.title) + '</label>';
+    }
+    var groups = [
+      { key: '计划', tables: ['year_plan'] },
+      { key: '项目', tables: ['projects'] },
+      { key: '课程', tables: ['courses'] },
+      { key: '任务', tables: ['study_tasks', 'today_tasks'] }
+    ];
+    var body = groups.map(function(g){
+      var items = targets.filter(function(tg){ return g.tables.indexOf(tg.t) >= 0; });
+      if (!items.length) return '';
+      return '<details open class="v2h-link-group"><summary>' + g.key + ' <small>(' + items.length + ')</small></summary>' +
+        '<input type="text" class="v2h-link-search" placeholder="搜索' + g.key + '…" data-v2h-search>' +
+        '<div class="v2h-link-items">' + items.map(chipHtml).join('') + '</div></details>';
+    }).join('');
+    if (!body) return '<div class="v2h-link-empty"><small>暂无可关联的 计划/项目/课程/任务</small></div>';
+    return '<div class="v2h-link-picker" data-v2h-picker>' +
+      '<div class="v2h-link-selected" data-v2h-selected></div>' + body + '</div>';
+  }
+
+  // 把 current 状态同步到 hidden input + 置顶已选 chips
+  function v2h_syncLinkState($form, $wrap) {
+    var $input = $form && $form.querySelector('input[name="关联项"]');
+    if (!$input) return;
+    var current = {};
+    ($wrap || $form).querySelectorAll('input[data-v2h-link]:checked').forEach(function(el){
+      var kv = (el.getAttribute('data-v2h-link') || '').split('|');
+      if (kv.length === 2) current[kv[0] + '|' + kv[1]] = { t: kv[0], id: kv[1] };
+    });
+    $input.value = JSON.stringify(Object.keys(current).map(function(k){ return current[k]; }));
+    var $sel = $wrap && $wrap.querySelector('[data-v2h-selected]');
+    if ($sel) {
+      var titles = {};
+      ($wrap||$form).querySelectorAll('input[data-v2h-link]').forEach(function(el){
+        titles[el.getAttribute('data-v2h-link')] = (el.closest('.v2h-link-chip') || {}).textContent || '';
+      });
+      $sel.innerHTML = Object.keys(current).map(function(k){
+        return '<span class="v2h-selected-chip">' + escapeHTML((titles[k] || k).trim()) +
+          ' <button type="button" data-v2h-unlink="' + escapeHTML(k) + '" aria-label="移除">×</button></span>';
+      }).join('');
+    }
+  }
+
+  function v2h_bindRecordLinkEvents($form, $wrap) {
+    if (!$wrap) return;
+    $wrap.addEventListener('change', function(ev){
+      if (ev.target && ev.target.getAttribute && ev.target.getAttribute('data-v2h-link')) {
+        var chip = ev.target.closest('.v2h-link-chip');
+        if (chip) chip.classList.toggle('on', ev.target.checked);
+        v2h_syncLinkState($form, $wrap);
+      }
+    });
+    $wrap.addEventListener('click', function(ev){
+      var t = ev.target;
+      var un = t && t.getAttribute && t.getAttribute('data-v2h-unlink');
+      if (un) {
+        var cb = $wrap.querySelector('input[data-v2h-link="' + un.replace(/"/g, '\\"') + '"]');
+        if (cb) { cb.checked = false; var chip = cb.closest('.v2h-link-chip'); if (chip) chip.classList.remove('on'); }
+        v2h_syncLinkState($form, $wrap);
+      }
+    });
+    $wrap.addEventListener('input', function(ev){
+      if (ev.target && ev.target.getAttribute && ev.target.getAttribute('data-v2h-search')) {
+        var q = String(ev.target.value || '').trim().toLowerCase();
+        var items = ev.target.closest('.v2h-link-group').querySelectorAll('.v2h-link-chip');
+        Array.prototype.slice.call(items).forEach(function(chip){
+          chip.style.display = (!q || chip.textContent.toLowerCase().indexOf(q) >= 0) ? '' : 'none';
+        });
+      }
+    });
+    // 初始渲染已选区
+    v2h_syncLinkState($form, $wrap);
+  }
+
+  // 主题自动继承：从「关联项」的 计划/项目/课程 反查主题，继承为 supporting（只增不改）
+  function v2h_inheritTopicFromLinks(key, rec) {
+    if (V2H_LINK_TABLES.indexOf(key) < 0) return [];
+    if (!rec || !rec._id || rec._id === '__new__') return [];
+    var links = v2h_parseLinks(rec['关联项']);
+    var parents = links.filter(function(l){ return V2H_PARENT_TYPES.indexOf(l.t) >= 0; });
+    if (!parents.length) return [];
+    var store = v25_loadStore();
+    store.topic_links = store.topic_links || [];
+    store.topic_events = store.topic_events || [];
+    // 手动勾选优先：override 已选主题不覆盖
+    var manual = [];
+    try {
+      var ov = v2a_getOverride(key, rec._id) || {};
+      manual = ((ov.topic_roles && ov.topic_roles.core) || []).concat(((ov.topic_roles && ov.topic_roles.supporting) || []));
+    } catch(_) {}
+    // 已有非 ambient link 的主题不再处理（含手动/迁移/历史继承）→ 编辑时手动移除继承主题不会被自动加回
+    var existing = {};
+    store.topic_links.forEach(function(l){
+      if (l.record_type === key && l.record_id === rec._id && l.topic_id && l.topic_role !== 'ambient') existing[l.topic_id] = true;
+    });
+    // 父记录主题来源 1：主表 topic_events（中文键三元组）
+    var parentTopicIds = [];
+    ((typeof storeState !== 'undefined' && storeState.tableRecords.topic_events) || []).forEach(function(e){
+      if (!e || !e['主题 ID']) return;
+      var hit = parents.some(function(p){ return e['来源表'] === p.t && String(e['来源记录 ID']) === String(p.id); });
+      if (hit && parentTopicIds.indexOf(e['主题 ID']) < 0) parentTopicIds.push(e['主题 ID']);
+    });
+    // 父记录主题来源 2：影子 store confirmed links 兜底
+    store.topic_links.forEach(function(l){
+      if (!l.topic_id || l.topic_role === 'ambient' || l.review_status === 'rejected') return;
+      var hit = parents.some(function(p){ return l.record_type === p.t && String(l.record_id) === String(p.id); });
+      if (hit && parentTopicIds.indexOf(l.topic_id) < 0) parentTopicIds.push(l.topic_id);
+    });
+    var created = [];
+    parentTopicIds.forEach(function(tid){
+      if (!tid || manual.indexOf(tid) >= 0 || existing[tid]) return;
+      var link = {
+        _id: (typeof uid === 'function' ? uid() : ('link_' + Date.now() + '_' + Math.random().toString(36).slice(2,8))),
+        record_type: key,
+        record_id: rec._id,
+        topic_id: tid,
+        link_type: 'derived',
+        relevance: 0.8,
+        confidence: 0.8,
+        relation_source: 'inherited',
+        topic_role: 'supporting',
+        review_status: 'confirmed',
+        context_key: '_default',
+        inherited_from: '关联项',
+        created_at: new Date().toISOString()
+      };
+      store.topic_links.push(link);
+      var ev = v2_buildEvent(link, rec, { date: rec['日期'] || null, context_key: '_default' });
+      if (ev) {
+        try { var ov2 = v2a_getOverride(key, rec._id); if (ov2 && ov2.nature) ev.nature = ov2.nature; } catch(e2) {}
+        v2_upsertEvent(store, ev);
+      }
+      created.push(tid);
+    });
+    if (created.length) {
+      v25_saveStore(store);
+      // 投影主表 topic_events，让 Observatory 贡献聚合可见（只增不改）
+      try { v2a_syncLinkToMainEvents(key, rec._id); } catch(e) {}
+    }
+    return created;
+  }
+
+  var V2H_MIGRATE_FLAG = 'dc_lifestation_v2h_links_migrated';
+
+  // 一次性迁移：旧「关联计划/关联课程」文本 → 结构化「关联项」（精确 → 子串唯一命中；不删旧文本可回退）
+  function v2h_migrateRecordLinks() {
+    try { if (localStorage.getItem(V2H_MIGRATE_FLAG)) return 0; } catch(_) {}
+    var R = (typeof storeState !== 'undefined' && storeState.tableRecords) || {};
+    var planIdx = (R.year_plan || []).filter(function(r){ return r && r._id && r['标题']; });
+    var courseIdx = (R.courses || []).filter(function(r){ return r && r._id && r['课程名']; });
+    function uniqMatch(text, idx, field) {
+      if (!text) return null;
+      var t = String(text).trim().toLowerCase();
+      if (!t) return null;
+      var hits = [];
+      idx.forEach(function(r){
+        var name = String(r[field]).trim().toLowerCase();
+        if (!name) return;
+        if (name === t || name.indexOf(t) >= 0 || t.indexOf(name) >= 0) hits.push(r);
+      });
+      return hits.length === 1 ? hits[0] : null;
+    }
+    var migrated = 0;
+    V2H_LINK_TABLES.forEach(function(k){
+      var changed = false;
+      (R[k] || []).forEach(function(rec){
+        if (!rec || !rec._id) return;
+        if (rec['关联项']) return; // 已有结构化关联，跳过（幂等）
+        var arr = [];
+        var plan = uniqMatch(rec['关联计划'], planIdx, '标题');
+        if (plan) arr.push({ t: 'year_plan', id: plan._id });
+        var course = uniqMatch(rec['关联课程'], courseIdx, '课程名');
+        if (course) arr.push({ t: 'courses', id: course._id });
+        if (arr.length) { rec['关联项'] = JSON.stringify(arr); changed = true; migrated++; }
+        else if (rec['关联计划'] || rec['关联课程']) {
+          console.warn('[v2h] 关联文本无法唯一匹配，保留原文本：', k, rec._id, rec['关联计划'], rec['关联课程']);
+        }
+      });
+      if (changed) { try { saveLocal(k); } catch(e) {} }
+    });
+    try { localStorage.setItem(V2H_MIGRATE_FLAG, '1'); } catch(_) {}
+    if (migrated) console.log('[v2h] 关联项迁移完成：', migrated, '条');
+    return migrated;
   }
 
   function v2a_handleLinkAction(act, link_id, opts) {
@@ -3611,7 +3904,7 @@
         '<h3>✨ 新建主题</h3>'+
         '<form id="__v2aNewTopicForm" onsubmit="return false">'+
           '<div class="form-row"><label>主题名 *</label><input name="主题名" required placeholder="如：雅思 / AI产品 / 写作" autofocus></div>'+
-          '<div class="form-row"><label>类型</label><select name="类型">' + ['领域','聚焦','方法','工具','其他'].map(function(o){ return '<option>' + o + '</option>'; }).join('') + '</select></div>'+
+          '<div class="form-row"><label>类型</label><select name="类型">' + (SCHEMAS.topics.find(function(f){return f.name==='类型';}).options).map(function(o){ return '<option>' + o + '</option>'; }).join('') + '</select></div>'+
           '<div class="form-row"><label>别名（逗号分隔）</label><input name="别名" placeholder="如：English,IELTS"></div>'+
         '</form>'+
         '<div class="form-actions">'+
@@ -5969,6 +6262,8 @@
       supaSilentWrite('add', key, r);
       // v2a：新建记录时 Picker 勾选的主题落到真实 _id（links + events）
       try { if (typeof v2a_applyPendingNew === 'function') v2a_applyPendingNew(key, r); } catch(e){}
+      // v2h：从「关联项」继承 计划/项目/课程 的主题（supporting，只增不改）
+      try { if (typeof v2h_inheritTopicFromLinks === 'function') v2h_inheritTopicFromLinks(key, r); } catch(e){}
       // 候选主题推荐：未手动关联时，从正式主题库/预设名匹配并提示（不再自动建主题）
       try { if (typeof v2a_suggestTopicForRecord === 'function') v2a_suggestTopicForRecord(key, r); } catch(e){}
       return Promise.resolve(r);
@@ -5977,7 +6272,7 @@
       if (USE_SDK) return SDK.updateRecord({ databaseId: NAMESPACE_IDS[key], recordId: recordId, properties: props }).then(function(){ storeState.lastSync = Date.now(); updateSyncState('synced'); }).catch(function(err){ queue.push({op:'update',key:key,recordId:recordId,props:props}); updateSyncState('error'); throw err; });
       var arr = storeState.tableRecords[key] || [];
       for (var i = 0; i < arr.length; i++) {
-        if (arr[i]._id === recordId) { arr[i] = Object.assign({}, arr[i], props, {_ts: Date.now()}); saveLocal(key); try { observeChange(key, recordId, 'update', arr[i]); } catch(e){}; supaSilentWrite('update', key, arr[i]); try { if (typeof v2a_suggestTopicForRecord === 'function') v2a_suggestTopicForRecord(key, arr[i]); } catch(e){}; return Promise.resolve(arr[i]); }
+        if (arr[i]._id === recordId) { arr[i] = Object.assign({}, arr[i], props, {_ts: Date.now()}); saveLocal(key); try { observeChange(key, recordId, 'update', arr[i]); } catch(e){}; supaSilentWrite('update', key, arr[i]); try { if (typeof v2h_inheritTopicFromLinks === 'function') v2h_inheritTopicFromLinks(key, arr[i]); } catch(e){}; try { if (typeof v2a_suggestTopicForRecord === 'function') v2a_suggestTopicForRecord(key, arr[i]); } catch(e){}; return Promise.resolve(arr[i]); }
       }
       return Promise.reject(new Error('record not found'));
     },
@@ -6681,7 +6976,7 @@
   var $modalRoot = document.getElementById('modalRoot');
   function openModal(title, fields, onSubmit, defaults, iconSvg) {
     var basic = [], advanced = [];
-    var advancedNames = ['状态','负责人','备注','任务','平台','章节','笔记','评分','封面','短评','年份','开始','完结','频次','时段','单位','目标/天','颜色','启用'];
+    var advancedNames = ['状态','负责人','备注','任务','平台','章节','笔记','评分','封面','短评','年份','开始','完结','频次','时段','单位','目标/天','颜色','启用','关联计划','关联课程'];
     fields.forEach(function(f) {
       var v = (defaults && defaults[f.name] != null) ? defaults[f.name] : '';
       var input;
@@ -6701,10 +6996,15 @@
         input = '<input type="date" name="' + escapeHTML(f.name) + '" value="' + escapeHTML(String(v || todayStr())) + '">';
       } else if (f.type === 'checkbox') {
         input = '<label class="check-row"><input type="checkbox" name="' + escapeHTML(f.name) + '"' + (v ? ' checked' : '') + '><span>' + escapeHTML(String(f.placeholder || f.name)) + '</span></label>';
+      } else if (f.type === 'record-link') {
+        // 关联项：数据走隐藏 input（JSON 数组），UI 由 v2a 注入的 record-link picker 独占（整行隐藏）
+        var lv = '[]';
+        try { lv = JSON.stringify(JSON.parse(v || '[]')); } catch(_) {}
+        input = '<input type="hidden" name="' + escapeHTML(f.name) + '" value="' + escapeHTML(lv) + '" data-record-link-input>';
       } else {
         input = '<input type="text" name="' + escapeHTML(f.name) + '" value="' + escapeHTML(String(v)) + '">';
       }
-      var row = '<div class="form-row" data-field-name="' + escapeHTML(f.name) + '"><label>' + escapeHTML(f.name) + '</label>' + input + '</div>';
+      var row = '<div class="form-row' + (f.type === 'record-link' ? '" style="display:none' : '') + '" data-field-name="' + escapeHTML(f.name) + '"><label>' + escapeHTML(f.name) + '</label>' + input + '</div>';
       if (f.advanced || advancedNames.indexOf(f.name) >= 0) advanced.push(row);
       else basic.push(row);
     });
@@ -7268,6 +7568,67 @@
   /* ============================================================
      Dashboard 渲染
      ============================================================ */
+  /* v2h: 全模块今日待办聚合（带 tableKey/recordId，可点击编辑） */
+  function collectTodayCross() {
+    var today = todayStr();
+    var cross = [];
+    (storeState.tableRecords.today_tasks || []).forEach(function(r){
+      var overdue = r['日期'] < today && r['状态'] !== '已完成';
+      var todayHit = r['日期'] === today && r['状态'] !== '已完成';
+      if (overdue || todayHit) {
+        cross.push({
+          sourceClass: r['来源模块'] === '工作' ? 'work' : (r['来源模块'] === '学习' ? 'learn' : (r['来源模块'] === '健身' || r['来源模块'] === '记账' || r['来源模块'] === '习惯' ? 'meta' : '')),
+          source: r['来源模块'] || '今日',
+          overdue: overdue,
+          title: r['标题'] || '(未命名)',
+          tableKey: 'today_tasks', recordId: r._id
+        });
+      }
+    });
+    (storeState.tableRecords.calendar_events || []).forEach(function(r){
+      if (r['日期'] === today && r['类型'] === '待办') {
+        cross.push({ sourceClass: '', source: '日程', overdue: false, title: r['标题'] || '', tableKey: 'calendar_events', recordId: r._id });
+      }
+    });
+    (storeState.tableRecords.habits || []).forEach(function(h){
+      if (h['启用'] === false) return;
+      var hit = (storeState.tableRecords.habit_logs || []).some(function(l){ return l['日期'] === today && l['习惯 ID'] === h._id; });
+      if (!hit) cross.push({ sourceClass: 'meta', source: '习惯', overdue: false, title: h['习惯名'] || '', tableKey: 'habits', recordId: h._id });
+    });
+    (storeState.tableRecords.study_tasks || []).forEach(function(r){
+      var overdue = r['日期'] && r['日期'] < today && r['状态'] !== '已完成';
+      var todayHit = r['日期'] === today && r['状态'] !== '已完成';
+      if (overdue || todayHit) {
+        cross.push({ sourceClass: 'learn', source: '学习任务', overdue: !!overdue, title: r['标题'] || '', tableKey: 'study_tasks', recordId: r._id });
+      }
+    });
+    (storeState.tableRecords.projects || []).forEach(function(p){
+      if (p['状态'] === '已完成') return;
+      if (!p['截止'] || p['截止'] > today) return;
+      cross.push({ sourceClass: 'work', source: '工作', overdue: p['截止'] < today, title: '📋 ' + (p['项目名'] || ''), tableKey: 'projects', recordId: p._id });
+    });
+    (storeState.tableRecords.inbox || []).forEach(function(i){
+      if (i['状态'] !== '待处理') return;
+      cross.push({ sourceClass: 'meta', source: 'Inbox', overdue: false, title: '📥 ' + (String(i['内容']||'').slice(0,30)), tableKey: 'inbox', recordId: i._id });
+    });
+    return cross;
+  }
+
+  /* v2h: 通用记录编辑入口（dashboard 时间线/今日条目点击跳转用） */
+  function openRecordEditor(table, recordId) {
+    var rec = (storeState.tableRecords[table] || []).find(function(r){ return r._id === recordId; });
+    if (!rec) { toast('记录不存在或已删除', 'danger'); return; }
+    if (table === 'year_plan') { openYearPlanModal(rec); return; }
+    var rowOverrides = { projects: {'任务': 6}, courses: {'笔记': 10}, study_notes: {'内容': 8}, today_tasks: {'备注': 4}, study_tasks: {'备注': 4}, weekly_reviews: {'内容': 8} };
+    var fields = (SCHEMAS[table] || []).map(function(f){
+      var ov = (rowOverrides[table] || {})[f.name];
+      return ov ? Object.assign({}, f, { rows: ov }) : Object.assign({}, f);
+    });
+    openModal('编辑 · ' + (obsSourceLabel(table) || table), fields, function(props){
+      return Store.updateRecord(table, recordId, props).then(function(){ renderAll(); });
+    }, rec);
+  }
+
   function renderDashboard() {
     var yearPlans = storeState.tableRecords.year_plan || [];
     var now = new Date();
@@ -7302,10 +7663,6 @@
       var d = new Date(); d.setDate(d.getDate() - d.getDay());
       return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
     })();
-    var weekDoneTasks = (storeState.tableRecords.today_tasks || []).filter(function(r){
-      return r['状态'] === '已完成' && r['日期'] && r['日期'] >= weekStart;
-    }).length;
-
     var habitDays = (function(){
       var logs = storeState.tableRecords.habit_logs || [];
       var days = {};
@@ -7327,10 +7684,7 @@
     document.getElementById('kDays').textContent = yearPassedPct + '%';
     document.getElementById('kDaysSub').textContent = '距年底还有 ' + (daysTotal - daysPassed) + ' 天';
     document.getElementById('kMilestones').textContent = doneMilestones + ' / ' + totalMilestones;
-    document.getElementById('kWeekDone').textContent = weekDoneTasks;
-    document.getElementById('kHabits').textContent = habitDays;
     document.getElementById('kSpend').textContent = fmtMoney(weekSpend, 'CNY');
-    document.getElementById('kP0').textContent = p01Projects;
 
     // Ring
     var ringPct = Math.min(100, Math.round(planAvg));
@@ -7401,47 +7755,76 @@
       });
     });
 
-    // 跨模块今日
-    var today = todayStr();
-    var cross = [];
-    (storeState.tableRecords.today_tasks || []).forEach(function(r){
-      var overdue = r['日期'] < today && r['状态'] !== '已完成';
-      var todayHit = r['日期'] === today;
-      if (overdue || todayHit) {
-        cross.push({
-          sourceClass: r['来源模块'] === '工作' ? 'work' : (r['来源模块'] === '学习' ? 'learn' : (r['来源模块'] === '健身' || r['来源模块'] === '记账' || r['来源模块'] === '习惯' ? 'meta' : '')),
-          source: r['来源模块'] || '今日',
-          overdue: overdue,
-          title: r['标题'] || '(未命名)'
-        });
-      }
-    });
-    (storeState.tableRecords.projects || []).forEach(function(p){
-      if (p['状态'] === '已完成') return;
-      if (!p['截止'] || p['截止'] > today) return;
-      cross.push({
-        sourceClass: 'work', source: '工作',
-        overdue: p['截止'] < today,
-        title: '📋 ' + (p['项目名'] || '')
-      });
-    });
-    (storeState.tableRecords.inbox || []).forEach(function(i){
-      if (i['状态'] !== '待处理') return;
-      cross.push({ sourceClass: 'meta', source: 'Inbox', overdue:false, title: '📥 ' + (String(i['内容']||'').slice(0,30)) });
-    });
-    cross = cross.slice(0, 8);
+    // 跨模块今日（全模块聚合，可点击编辑）
+    var cross = collectTodayCross().slice(0, 12);
 
-    document.getElementById('todayCrossTitle').textContent = cross.length + ' 条 · 跨模块 · 今日待处理';
+    document.getElementById('todayCrossTitle').textContent = cross.length + ' 条 · 全模块 · 今日待处理';
+    var $crossList = document.getElementById('todayCrossList');
     if (cross.length === 0) {
-      document.getElementById('todayCrossList').innerHTML = '<div class="empty">今天都做完了，给自己鼓个掌 🌷</div>';
+      $crossList.innerHTML = '<div class="empty">今天都做完了，给自己鼓个掌 🌷</div>';
     } else {
-      document.getElementById('todayCrossList').innerHTML = cross.map(function(it) {
-        return '<div class="today-cross-item' + (it.overdue?' overdue':'') + '">' +
+      $crossList.innerHTML = cross.map(function(it) {
+        var dataAttr = it.tableKey && it.recordId ? ' data-table="' + escapeHTML(it.tableKey) + '" data-id="' + escapeHTML(it.recordId) + '" style="cursor:pointer"' : '';
+        return '<div class="today-cross-item' + (it.overdue?' overdue':'') + '"' + dataAttr + '>' +
           '<span class="src ' + it.sourceClass + '">' + escapeHTML(it.source) + '</span>' +
           '<div style="flex:1">' + escapeHTML(it.title) + '</div>' +
-          (it.overdue ? '<span class="src" style="background:rgba(255,137,168,0.18);color:var(--c-danger)">逾期</span>' : '<span style="font-size:11px;color:var(--c-muted)">' + today.slice(5) + '</span>') +
+          (it.overdue ? '<span class="src" style="background:rgba(255,137,168,0.18);color:var(--c-danger)">逾期</span>' : '<span style="font-size:11px;color:var(--c-muted)">今日</span>') +
         '</div>';
       }).join('');
+      Array.prototype.slice.call($crossList.querySelectorAll('.today-cross-item[data-table]')).forEach(function(el){
+        el.addEventListener('click', function(){
+          try { openRecordEditor(el.getAttribute('data-table'), el.getAttribute('data-id')); } catch(e) { console.error('openRecordEditor err', e); }
+        });
+      });
+    }
+
+    // 近期完成时间线（复用 Observatory 贡献数据，只统计已完成记录；不依赖当前 obs 周期选择）
+    var $tl = document.getElementById('dashTimeline');
+    if ($tl) {
+      var tlItems = [];
+      try { tlItems = obsContributionTimeline(aggregateTopicContributions(30, 0)).slice(0, 8); } catch(e) { tlItems = []; }
+      var tlSub = document.getElementById('dashTimelineSub');
+      if (tlSub) tlSub.textContent = tlItems.length ? '近 30 天已完成 · 点击可编辑' : '';
+      if (!tlItems.length) {
+        $tl.innerHTML = '<div class="growth-empty">近 30 天还没有已完成的主题记录</div>';
+      } else {
+        $tl.innerHTML = tlItems.map(function(it) {
+          var dataAttr = it.table && it.recordId ? ' data-table="' + escapeHTML(it.table) + '" data-id="' + escapeHTML(it.recordId) + '" style="cursor:pointer"' : '';
+          return '<div class="growth-timeline-row"' + dataAttr + '>' +
+            '<span class="growth-timeline-date">' + escapeHTML((it.date || '').slice(5)) + '</span>' +
+            '<div class="growth-timeline-main"><strong>' + escapeHTML(it.title || '(未命名)') + '</strong>' +
+            '<small>' + escapeHTML(obsSourceLabel(it.table) || '') + '</small></div>' +
+            (it.topics && it.topics.length ? '<span class="growth-topic-chip">' + escapeHTML(it.topics[0]) + (it.topics.length > 1 ? ' +' + (it.topics.length - 1) : '') + '</span>' : '') +
+          '</div>';
+        }).join('');
+        Array.prototype.slice.call($tl.querySelectorAll('.growth-timeline-row[data-table]')).forEach(function(el){
+          el.addEventListener('click', function(){
+            try { openRecordEditor(el.getAttribute('data-table'), el.getAttribute('data-id')); } catch(e) { console.error('openRecordEditor err', e); }
+          });
+        });
+      }
+    }
+
+    // 活跃主题 Top3（近 30 天贡献 + 环比）
+    var $top = document.getElementById('dashTopTopics');
+    if ($top) {
+      var topItems = [];
+      try { topItems = aggregateTopicContributions(30, 0).slice(0, 3); } catch(e) { topItems = []; }
+      if (!topItems.length) {
+        $top.innerHTML = '<div class="growth-empty">还没有主题贡献数据<br><small>完成任务/打卡后自动积累</small></div>';
+      } else {
+        var maxScore = Math.max.apply(null, topItems.map(function(x){ return x.score; })) || 1;
+        $top.innerHTML = topItems.map(function(x) {
+          var trend = x.changeRate > 0 ? '<span style="color:var(--c-danger);font-size:11px">↑ ' + x.changeRate + '%</span>'
+            : (x.changeRate < 0 ? '<span style="color:var(--c-muted);font-size:11px">↓ ' + Math.abs(x.changeRate) + '%</span>' : '');
+          return '<div class="growth-topic-row" style="padding:9px 0;border-bottom:1px solid rgba(180,156,224,.14)">' +
+            '<div style="flex:1;min-width:0"><strong style="color:#42364D;font-size:13px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHTML(x.topic['主题名'] || '') + '</strong>' +
+            '<div class="growth-mini-bar" style="margin-top:5px"><i style="width:' + Math.max(8, Math.round(x.score / maxScore * 100)) + '%"></i></div></div>' +
+            '<div style="text-align:right;flex:0 0 auto;margin-left:10px"><b style="color:#6E5B8C;font-size:13px">' + x.score + '</b>' +
+            '<div style="font-size:10px;color:var(--c-muted)">贡献分 ' + trend + '</div></div>' +
+          '</div>';
+        }).join('');
+      }
     }
 
     // body::before 全屏铺满
@@ -9377,7 +9760,7 @@
       '<h3>' + SVG.overview + ' 手动添加主题</h3>' +
       '<form id="__atForm" onsubmit="return false">' +
         '<div class="form-row"><label>主题名 *</label><input name="主题名" required placeholder="如：雅思 / AI产品 / 写作"></div>' +
-        '<div class="form-row"><label>类型</label><select name="类型">' + ['学习','工作','生活','兴趣','技能','健康'].map(function(o){ return '<option>' + o + '</option>'; }).join('') + '</select></div>' +
+        '<div class="form-row"><label>类型</label><select name="类型">' + (SCHEMAS.topics.find(function(f){return f.name==='类型';}).options).map(function(o){ return '<option>' + o + '</option>'; }).join('') + '</select></div>' +
         '<div class="form-row"><label>别名（逗号分隔）</label><input name="别名" placeholder="如：English,IELTS,English Learning"></div>' +
         '<div class="form-row"><label>说明</label><textarea name="说明" rows="3" placeholder="这个主题对你意味着什么？"></textarea></div>' +
       '</form>' +
@@ -9431,7 +9814,7 @@
     function done(choice) {
       try { localStorage.setItem(STORAGE_PREFIX + 'onboarded', '1'); } catch(_) {}
       if (bg && bg.parentNode) bg.parentNode.removeChild(bg);
-      if (choice === 'seed') { seedExampleData(); showView('dashboard'); renderAll(); toast('已加载示例数据', 'success'); }
+      if (choice === 'seed') { seedExampleData(); try { localStorage.removeItem(V2H_MIGRATE_FLAG); v2h_migrateRecordLinks(); } catch(e){} showView('dashboard'); renderAll(); toast('已加载示例数据', 'success'); }
       else if (choice === 'import') { document.getElementById('fileJSON').click(); }
       else { showView('dashboard'); }
     }
@@ -9567,6 +9950,8 @@
       // 主题不再自动从标题产生（方案第二节）；只能用户主动创建 / 确认推荐 / 合并，或 Observatory「导入预设」
       // 一次性把 v25 影子存储里的历史主题 + 已确认关联迁回主表
       try { v2a_backfillMainFromV25(); } catch(e){ console.error('backfill main err', e); }
+      // v2h：一次性把旧「关联计划/关联课程」文本迁移为结构化「关联项」（幂等，localStorage 标记防重跑）
+      try { v2h_migrateRecordLinks(); } catch(e){ console.error('v2h migrate err', e); }
       /* V6: 绑定 Observatory 入口 - 切到 obs 群组，sidebar 出现 */
       var obsEntry = document.getElementById('obsEntry');
       if (obsEntry) obsEntry.addEventListener('click', function(){
