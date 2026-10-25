@@ -315,7 +315,7 @@
   .dash-kpi .s { font-size: 11px; color: var(--c-muted); }
 
   /* ====== 4 板块卡片 ====== */
-  .boards-head { display: flex; align-items: center; justify-content: space-between; margin: 18px 0 12px; }
+  .boards-head { display: flex; align-items: center; justify-content: space-between; margin: 28px 0 14px; }
   .boards-head h2 {
     font-size: 13px; color: var(--c-purple-deep); font-weight: 700;
     text-transform: uppercase; letter-spacing: 1.2px;
@@ -415,7 +415,8 @@
   .today-cross-item.overdue { border-color: var(--c-danger); background: rgba(255,137,168,0.10); }
   .today-cross-item .src { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(180,156,224,0.18); color: var(--c-purple-deep); }
   /* v2h: 主页近期动态两栏（近期完成 + 活跃主题） */
-  .dash-insights { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+  .dash-insights { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px; }
+  .dash-domains { margin-bottom: 28px; }
   .dash-panel { margin-bottom: 0; }
   .dash-panel .growth-timeline { padding-top: 2px; }
   /* v2h: 看板1 领域投入与变化 */
@@ -7345,24 +7346,23 @@
   function showView(view) {
     VIEW = view;
     document.body.setAttribute('data-view', view);
+    // 左栏导航常驻：总览(dashboard) 与群组(group) 两个视图都显示，用户随时可进入工作/学习/生活/复盘
+    $appRoot.className = 'app';
+    $mainRoot.className = '';
+    $sideBar.style.display = 'block';
+    // 手机窄屏：进入任意视图时自动折叠 sidebar 成图标条
+    if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) {
+      $sideBar.classList.add('collapsed');
+      document.getElementById('sidebarToggle').textContent = '›';
+    }
     if (view === 'dashboard') {
-      $appRoot.className = 'app no-sidebar';
-      $mainRoot.className = 'no-sidebar';
-      $sideBar.style.display = 'none';
       $dashShell.classList.add('active');
       $groupShell.classList.remove('active');
+      renderSidebar();
       renderDashboard();
     } else {
-      $appRoot.className = 'app';
-      $mainRoot.className = '';
-      $sideBar.style.display = 'block';
       $dashShell.classList.remove('active');
       $groupShell.classList.add('active');
-      // iPhone / 手机：进入群组详情时自动折叠 sidebar 成图标条
-      if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) {
-        $sideBar.classList.add('collapsed');
-        document.getElementById('sidebarToggle').textContent = '›';
-      }
       renderSidebar();
       renderSubBar();
       renderMod();
@@ -7380,14 +7380,15 @@
      ============================================================ */
   function renderSidebar() {
     var yearPlans = storeState.tableRecords.year_plan || [];
+    var inDash = (VIEW === 'dashboard');
     var html = ''+
-      '<button class="side-item" data-nav="dashboard" style="background: rgba(180,156,224,0.10);">'+
+      '<button class="side-item' + (inDash ? ' active' : '') + '" data-nav="dashboard">'+
         '<span class="side-emoji">📍</span>'+
         '<span class="side-label">总览</span>'+
       '</button>';
     html += '<h2 style="margin-top: 12px">群组</h2>';
     GROUPS.forEach(function(g) {
-      var expanded = (g.key === currentGroup);
+      var expanded = (!inDash && g.key === currentGroup);
       html += '<div class="side-group' + (expanded?' expanded':'') + '" data-group="' + g.key + '">'+
         '<button class="side-item" data-nav="group" data-gnav="' + g.key + '">'+
           '<span class="side-emoji">' + g.emoji + '</span>'+
