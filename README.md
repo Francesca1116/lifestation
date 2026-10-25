@@ -1,157 +1,99 @@
-# 生活站 · Life Station
+# LifeStation · 生活站
 
-> 一体化工作学习生活工作台 · 莫奈水彩主题 · 玻璃卡片 · 双栈数据
+> A single-file personal workspace that grows into a **lifelong growth database** —
+> every task you finish, habit you check in, and note you write becomes structured,
+> analyzable evidence of how you learn, work, and grow.
 
-把生活、学习、工作、复盘、Personal Observatory（主题/动量/星图/漏斗/连接）放进一个工作台，双击 HTML 就能用，也能升格到资料库在线版。
+**Live demo:** https://4e02747cedc7482d94dcddbc44e8af01.app.workbuddy.link/
+*(All data stays in your own browser's localStorage — the demo starts empty and private.)*
 
-![banner](docs/assets/banner-placeholder.svg)
-
----
-
-## ✨ 特性
-
-- **5 个一级群组**：生活 / 学习 / 工作 / 复盘 / Personal Observatory
-- **21 张业务表**：今日任务 / 日程 / 习惯 / 健身 / 记账 / 书影音 / 项目 / 课程 / Inbox / 周复盘 / 年计划 / 学习任务 / 学习习惯 / 学习打卡 / 学习笔记 / Topic / TopicEvent / KnowledgeLink ...
-- **5 张莫奈真迹**（1908/1906/1899 + 印象日出 + 睡莲池，公共领域）：群组色调由 CSS filter 派生
-- **玻璃卡片 UI**：`rgba(255,255,255,0.4~0.55) + backdrop-filter: blur(20~28px)`
-- **双栈数据层**：优先 WorkBuddy 资料库 SDK，缺失降级 localStorage（key 前缀 `dc_lifestation_`）
-- **Personal Observatory**：Topic 深度 / 动量（21 天半衰期）/ Stage（E1-E6）/ Canvas 2D 星图 / 转化漏斗 / 知识连接
-- **Data Governance**：5-tab 弹模态 + AI Recommend Lineage + True Conversion Funnel
+<!-- TODO: add a real screenshot at docs/assets/screenshot.png -->
 
 ---
 
-## 🚀 快速开始
+## Why I built this
 
-### 方式 A：本地打开（最简单，零依赖）
+Most to-do apps stop at "task done ✅". I wanted to answer harder questions:
 
-```bash
-# 双击打开
-open src/生活站.html
-```
+- Which **domains** am I actually investing in — and how is that shifting week by week?
+- Of all the things I **learn**, which ones later get **applied, validated, or reused**?
+- What **evidence of progress** can I point to — beyond a raw count of completed tasks?
 
-适用：Safari / Chrome / Firefox；移动端 Safari 可"分享 → 添加到主屏幕"当 App 用。
-
-### 方式 B：升格到资料库在线版（多设备同步）
-
-需要 WorkBuddy IDE + 已登录账号。
-
-```bash
-# 1. 准备环境变量
-cp scripts/env.example /tmp/lifestation_env.sh
-# 编辑 /tmp/lifestation_env.sh 填你的路径
-source /tmp/lifestation_env.sh
-
-# 2. 在 IDE 对话里让 agent 换 token（写到 /tmp/wb_token）
-#    → 触发词：「接上 / 续上之前的工作 / 把工作台迁上资料库」
-
-# 3. 顺序跑 02-05
-bash scripts/02_create_lifestation_dbs.sh
-python3 scripts/03_attach_database_ids.py \
-  --manifest "$MANIFEST" \
-  --html "$HTML_FILE" \
-  --out "$READY_HTML"
-bash scripts/04_import_page.sh
-bash scripts/05_publish_page.sh
-```
-
-输出示例：
-
-```
-🎉 工作台已上线！公开 URL：
-https://workbuddy.link/p/<page_node_id>
-```
+LifeStation is my answer: a zero-dependency, open-in-a-tab workspace that records
+daily execution (tasks, habits, projects, courses, reading) and continuously turns
+that raw activity into a **contribution-weighted growth model**.
 
 ---
 
-## 📁 仓库结构
+## What's inside
+
+### 🏠 Data-first dashboard
+
+- **Today board** — todos, calendar, habit check-ins, overdue projects, inbox, aggregated across all modules; click any item to edit it in place
+- **Domain Overview** — contribution scores per domain over 7 / 30 / 90 days, with period-over-period change
+- **Knowledge Conversion** — tracks the real pipeline *learned (E1–E3) → applied (E4) → produced (E5/E6)*, and reports how many domains actually converted (no vanity numbers)
+- **Evidence of Progress** — concrete output events (finished books, completed courses, reusable notes) linked to their projects and topics
+
+### 🌱 Topic system (the growth database)
+
+- 21 record tables feed a unified **topic contribution model**:
+  `score = record-type weight × topic-role weight × stage weight`
+- Six-stage evidence semantics: `E1 Explore → E2 Learn → E3 Synthesize → E4 Apply → E5 Output → E6 Reuse`
+- **Structured record linking**: any task/habit/note can reference existing plans, projects, courses, or other tasks — child records then *inherit* their parents' topics automatically
+- Topic hygiene: auto-generated junk topics are quarantined behind an `_auto` flag and triaged in a dedicated review panel (merge / keep / remove)
+
+### 🔍 Analysis pages
+
+- **Topic Development** — 12-week contribution histogram, four-step growth path with real evidence, recent completion timeline
+- **Relation Explorer** — co-occurrence networks between domains, backed by actual shared records
+
+### ⚙️ Engineering
+
+- **One self-contained HTML file** — no build step, no framework, no network dependency; open it and it works (Monet's public-domain paintings are inlined as compressed backgrounds)
+- **Dual storage stack** — localStorage by default, with a silent-write sync layer designed for optional cloud backends
+- **13 test suites, 400+ assertions** — the entire app logic (aggregation, inheritance, migration, routing) is extracted from the HTML and regression-tested in Node `vm` + jsdom on every change
+- **Real bugs found and fixed**: a DST-transition timing bug in the habit heatmap (date comparison drifted on clock-change days), duplicate legacy-code shadowing, seed-data migration traps (substring-only title matching)
+
+---
+
+## Repository layout
 
 ```
 lifestation/
-├── README.md                       # 你正在看
-├── LICENSE                         # MIT
-├── .gitignore                      # 隐私保护
-├── docs/                           # 文档
-│   ├── 用户使用说明.md             # 功能说明（按群组）
-│   ├── 本地兜底版使用说明.md       # localStorage 双栈说明
-│   ├── 架构设计.md                 # 5 群组 / O1-O10 / Stage / Observatory
-│   └── 续用流程.md                 # 升格到资料库详细步骤
+├── README.md                  # you are here
+├── LICENSE                    # MIT
 ├── src/
-│   └── 生活站.html                 # 8.3MB 主文件（含 base64 莫奈图）
-└── scripts/                        # 升格脚本
-    ├── 01_get_token_credential.sh
-    ├── 02_create_lifestation_dbs.sh
-    ├── 03_attach_database_ids.py
-    ├── 04_import_page.sh
-    ├── 05_publish_page.sh
-    └── env.example
-```
-
-> ⚠️ `src/生活站.ready.html` 和 `scripts/manifest.json` 在 `.gitignore` 里——它们含敏感 ID，升格产物不提交。
-
----
-
-## 🎨 设计哲学
-
-- **水彩底色，莫奈为魂**：4 张群组主色由 1908 睡莲 / 1906 睡莲 / 1899 水莲池 / 1872 印象日出的真实色调 + CSS filter 派生
-- **玻璃卡片**：`backdrop-filter: blur(20~28px)`，让背景画作透过来
-- **深紫标题**：致敬莫奈晚期睡莲系列的紫调，夜晚氛围
-- **零外部依赖**：单文件 HTML，离线可用
-
----
-
-## 🔬 核心机制
-
-### 数据双栈
-
-```js
-// 优先 SDK，降级 localStorage
-const ds = window.__SMART_PAGE__?.database ?? {
-  list: (key) => JSON.parse(localStorage.getItem(`dc_lifestation_${key}`) || '[]'),
-  insert: (key, row) => { /* ... */ },
-  // ...
-};
-```
-
-### Stage 系统（Observatory）
-
-| Stage | 含义 | Weight |
-|-------|------|--------|
-| E1 Explore | 浏览、收集 | 1 |
-| E2 Learn | 入门理解 | 2 |
-| E3 Synthesize | 综合 | 4 |
-| E4 Apply | 应用 | 6 |
-| E5 Output | 产出 | 9 |
-| E6 Reuse | 复用 | 8 |
-
-### 动量计算（half-life 21 天）
-
-```js
-topicMomentum = Σ(event.weight × 0.5^(daysSince/21))
+│   └── 生活站.html             # the whole app (~1.2 MB, single file)
+├── scripts/                   # 13 regression test suites + legacy upgrade scripts
+│   ├── v2_test.js … v2i_dashboard_boards_test.js
+│   └── README.md
+└── docs/                      # design docs, architecture notes, AI testing guide
 ```
 
 ---
 
-## 🛠️ 修改与迭代
+## Running tests
 
-| 你要做什么 | 怎么做 |
-|-----------|--------|
-| 改 UI / 文案 / 样式 | 直接编辑 `src/生活站.html` → 重跑 03-05 升格 |
-| 改业务数据 | 线上版直接编辑 records（21 张表都在资料库） |
-| 导出/迁移数据 | 顶栏「导出」按钮 → JSON 备份 |
-| 加新功能 | 提 Issue 或直接 PR |
+```bash
+node scripts/v2i_dashboard_boards_test.js   # each suite is standalone, zero dependencies
+# jsdom-based suites additionally need: NODE_PATH=<path-to>/node_modules
+```
 
-详细见 `docs/续用流程.md`。
-
----
-
-## 📜 License
-
-MIT（莫奈作品在公共领域，无版权问题）
+Every suite extracts the relevant functions out of the HTML source, runs them in a
+Node `vm` sandbox against fixtures, and asserts on both static structure and behavior —
+so the single-file architecture doesn't mean "untestable".
 
 ---
 
-## 🙏 致谢
+## Design principles
 
-- **莫奈**（1840-1926）：四幅水彩底图
-- **WorkBuddy**：本地 IDE + 资料库能力
-- **本仓库作者**：Francesca Hu
+1. **Evidence over vanity metrics** — a finished task only counts once it maps to a topic, a stage, and (where possible) a project
+2. **Anti-pollution by default** — titles never auto-become topics; new topics require explicit confirmation
+3. **Single source of truth per concept** — one contribution model, one stage vocabulary, one linking schema
+4. **Boring tech, obsessive polish** — vanilla JS, one file, but with audit trails, migration flags, and idempotent upgrades
+
+---
+
+## License
+
+MIT. Artwork: Claude Monet paintings (public domain).
