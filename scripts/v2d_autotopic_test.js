@@ -49,6 +49,10 @@ if (!autoCode || autoCode.length < 200) {
   process.exit(2);
 }
 
+// 第六期：resolveGrowthStage（在 autoCode 内）依赖 inferStageFromRecord / STAGE_ORDER，
+// 二者定义在 autoCode 切片之前，这里单独抽取/补齐。
+const inferStageCode = html.slice(html.indexOf('function inferStageFromRecord'), html.indexOf('function detectTopicsFromRecord'));
+
 // ===== jsdom =====
 const dom = new JSDOM('<!DOCTYPE html><html><body><div id="modalRoot"></div></body></html>', { url: 'http://localhost/' });
 const jdWindow = dom.window;
@@ -67,6 +71,7 @@ const sandbox = {
   toast: function () {},
   uid: function () { return 'id_' + Math.random().toString(36).slice(2, 10); },
   todayStr: function () { return '2026-10-19'; },
+  STAGE_ORDER: ['E1 Explore','E2 Learn','E3 Synthesize','E4 Apply','E5 Output','E6 Reuse'],
   saveLocal: function (k) { /* no-op：测试直接读内存 storeState.tableRecords */ },
   storeState: {
     tableRecords: {
@@ -86,8 +91,8 @@ sandbox.localStorage.setItem('wb_topic_analytics_v25', JSON.stringify({
   backfill_meta: { topics_added: 0, links_added: 0, events_added: 0, last_run: null }
 }));
 
-// 注入模块（顺序：v2 → v25 → v2a → 自动生成段）
-for (const [name, code] of [['v2', v2Code], ['v25', v25Code], ['v2a', v2aCode], ['auto', autoCode]]) {
+// 注入模块（顺序：v2 → v25 → v2a → inferStage → 自动生成段）
+for (const [name, code] of [['v2', v2Code], ['v25', v25Code], ['v2a', v2aCode], ['inferStage', inferStageCode], ['auto', autoCode]]) {
   try { vm.runInContext(code, sandbox, { filename: name + '.js' }); }
   catch (e) { console.error('FAIL: 注入 ' + name + ' 模块抛错:', e.message, e.stack); process.exit(2); }
 }

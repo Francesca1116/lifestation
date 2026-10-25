@@ -1492,7 +1492,8 @@
       {name:'来源模块', type:'select', options:['今日','日程','习惯','健身','记账','书影音','工作','学习','其他']},
       {name:'优先级', type:'select', options:['高','中','低']},
       {name:'状态', type:'select', options:['待办','已完成']},
-      {name:'备注', type:'text'}
+      {name:'备注', type:'text'},
+      {name:'计入成长', type:'checkbox'}
     ],
     calendar_events: [
       {name:'日期', type:'date', required:true},
@@ -1528,7 +1529,6 @@
     ],
     habit_logs: [
       {name:'日期', type:'date'},
-      {name:'习惯 ID', type:'text'},
       {name:'数值', type:'number'},
       {name:'备注', type:'text'}
     ],
@@ -1557,7 +1557,8 @@
       {name:'短评', type:'textarea'},
       {name:'年份', type:'number'},
       {name:'添加', type:'date'},
-      {name:'完结', type:'date'}
+      {name:'完结', type:'date'},
+      {name:'计入成长', type:'checkbox'}
     ],
     projects: [
       {name:'项目名', type:'text', required:true},
@@ -1566,7 +1567,8 @@
       {name:'负责人', type:'text'},
       {name:'截止', type:'date'},
       {name:'备注', type:'textarea'},
-      {name:'任务', type:'textarea'}
+      {name:'任务', type:'textarea'},
+      {name:'计入成长', type:'checkbox'}
     ],
     courses: [
       {name:'课程名', type:'text', required:true},
@@ -1575,13 +1577,15 @@
       {name:'笔记', type:'textarea'},
       {name:'状态', type:'select', options:['想学','进行中','已学完']},
       {name:'开始', type:'date'},
-      {name:'完结', type:'date'}
+      {name:'完结', type:'date'},
+      {name:'计入成长', type:'checkbox'}
     ],
     inbox: [
       {name:'内容', type:'textarea', required:true},
       {name:'标签', type:'text'},
       {name:'状态', type:'select', options:['待处理','已处理','已归档']},
-      {name:'日期', type:'date'}
+      {name:'日期', type:'date'},
+      {name:'计入成长', type:'checkbox'}
     ],
     weekly_reviews: [
       {name:'周', type:'text', required:true},
@@ -1592,7 +1596,8 @@
       {name:'支出 CNY', type:'number'},
       {name:'高光', type:'textarea'},
       {name:'改进', type:'textarea'},
-      {name:'生成时间', type:'date'}
+      {name:'生成时间', type:'date'},
+      {name:'计入成长', type:'checkbox'}
     ],
     year_plan: [
       {name:'标题', type:'text', required:true},
@@ -1601,7 +1606,8 @@
       {name:'状态', type:'select', options:['进行中','已完成','已搁置']},
       {name:'开始', type:'date'},
       {name:'截止', type:'date'},
-      {name:'颜色', type:'select', options:['紫','粉','蓝','绿','橙']}
+      {name:'颜色', type:'select', options:['紫','粉','蓝','绿','橙']},
+      {name:'计入成长', type:'checkbox'}
     ],
     study_tasks: [
       {name:'日期', type:'date', required:true},
@@ -1611,7 +1617,8 @@
       {name:'关联项', type:'record-link'},
       {name:'关联计划', type:'text'},
       {name:'关联课程', type:'text'},
-      {name:'备注', type:'textarea'}
+      {name:'备注', type:'textarea'},
+      {name:'计入成长', type:'checkbox'}
     ],
     study_habits: [
       {name:'标题', type:'text', required:true},
@@ -1622,13 +1629,14 @@
       {name:'关联项', type:'record-link'},
       {name:'关联计划', type:'text'},
       {name:'颜色', type:'select', options:['紫','粉','蓝','绿','橙']},
-      {name:'启用', type:'checkbox'}
+      {name:'启用', type:'checkbox'},
+      {name:'计入成长', type:'checkbox'}
     ],
     study_checkins: [
       {name:'日期', type:'date'},
-      {name:'习惯 ID', type:'text'},
       {name:'数值', type:'number'},
-      {name:'备注', type:'text'}
+      {name:'备注', type:'text'},
+      {name:'计入成长', type:'checkbox'}
     ],
     study_notes: [
       {name:'日期', type:'date'},
@@ -1637,7 +1645,8 @@
       {name:'标签', type:'text'},
       {name:'关联项', type:'record-link'},
       {name:'关联计划', type:'text'},
-      {name:'关联课程', type:'text'}
+      {name:'关联课程', type:'text'},
+      {name:'计入成长', type:'checkbox'}
     ],
     topics: [
       {name:'主题名', type:'text', required:true},
@@ -4460,9 +4469,9 @@
       if (tableKey === 'finance_budgets') return 'E1 Explore';
       if (tableKey === 'study_tasks') return 'E4 Apply';
       if (tableKey === 'study_habits') return 'E1 Explore';
-      if (tableKey === 'study_checkins') return 'E2 Learn';
+      if (tableKey === 'study_checkins') return 'E4 Apply'; // 打卡 = 实践证据（与影子存储 v2a_inheritHabitLinks 的 E4 Apply 对齐）
     } catch(e) {}
-    return 'E1 Explore';
+    return null; // 无确定性规则的表 → 交由 resolveGrowthStage 走关键词辅助 / 默认 E1
   }
   function detectTopicsFromRecord(record, topics) {
     if (!record || !topics || !topics.length) return [];
@@ -4501,7 +4510,7 @@
       var matched = detectTopicsFromRecord(record, topics);
       if (!matched.length) return;
       var dateStr = (record && (record['日期'] || record['添加'] || record['添加'])) || new Date().toISOString().slice(0,10);
-      var stage = inferStageFromRecord(tableKey, action, record);
+      var stage = resolveGrowthStage(tableKey, record, { action: action });
       // de-dupe: 同一 (source_table, source_id, topic_id) 已存在则 update confidence/date
       matched.forEach(function(m, idx){
         m.role = idx === 0 ? 'primary' : 'secondary';
@@ -4751,6 +4760,52 @@
     'E4': 'E4 Apply', 'E5': 'E5 Output', 'E6': 'E6 Reuse',
     'ReuseCandidate': 'E6 Reuse', 'Unknown': 'E1 Explore'
   };
+
+  /* ============================================================
+     第六期：统一成长阶段入口 resolveGrowthStage(tableKey, record, context)
+     消除「写进去是一个阶段、展示/聚合时又变成另一个阶段」的双轨推断。
+     所有主表 topic_events 的阶段写入与贡献聚合，必须走这一入口。
+     确定性优先级（关键词只给建议、不静默改写）：
+       1) 用户明确选择       —— context.explicitStage 或 record['成长阶段']
+       2) 记录类型与状态规则 —— inferStageFromRecord（确定性硬规则）
+       3) 已关联结果/项目上下文 —— context.linkedStage
+       4) 内容关键词辅助     —— v2_inferStage（仅当类型规则未命中时才采用）
+       5) 保守默认值         —— E1 Explore
+     ============================================================ */
+  function normalizeGrowthStage(s) {
+    if (!s) return null;
+    var t = String(s).trim();
+    if (!t) return null;
+    if (STAGE_ORDER.indexOf(t) >= 0) return t;            // 已是全名
+    if (MAIN_STAGE_MAP[t]) return MAIN_STAGE_MAP[t];      // 短名 E1..E6 / ReuseCandidate / Unknown
+    var m = t.match(/^E([1-6])/);
+    if (m && MAIN_STAGE_MAP['E' + m[1]]) return MAIN_STAGE_MAP['E' + m[1]];
+    return null;
+  }
+  function resolveGrowthStage(tableKey, record, context) {
+    context = context || {};
+    // 1) 用户明确选择（最高优先）
+    var explicit = context.explicitStage || (record && record['成长阶段']);
+    var normExplicit = normalizeGrowthStage(explicit);
+    if (normExplicit) return normExplicit;
+    // 2) 记录类型与状态规则（确定性）
+    var typed = inferStageFromRecord(tableKey, context.action || 'add', record);
+    var normTyped = normalizeGrowthStage(typed);
+    if (normTyped) return normTyped;
+    // 3) 已关联结果/项目上下文
+    var normLinked = normalizeGrowthStage(context.linkedStage);
+    if (normLinked) return normLinked;
+    // 4) 内容关键词辅助（仅建议：只在上面都未命中时采用；命中非 Unknown 才用）
+    if (context.allowKeyword !== false) {
+      var kw = v2_inferStage(record);
+      if (kw && kw !== 'Unknown') {
+        var normKw = normalizeGrowthStage(kw);
+        if (normKw) return normKw;
+      }
+    }
+    // 5) 保守默认值
+    return 'E1 Explore';
+  }
   // 参与「自动生成主题」的来源表
   var AUTO_TOPIC_SOURCE_TABLES = ['courses','projects','media','year_plan','study_notes'];
 
@@ -4965,8 +5020,7 @@
       });
       if (dup) return;
       var role = (l.topic_role === 'supporting') ? 'secondary' : 'primary';
-      var shortStage = rec ? v2_inferStage(rec) : 'Unknown';
-      var stage = MAIN_STAGE_MAP[shortStage] || 'E1 Explore';
+      var stage = resolveGrowthStage(record_type, rec, { action: 'add' });
       var dateStr = rec ? (rec['日期'] || rec['添加'] || rec['开始'] || rec['生成时间'] || todayStr()) : todayStr();
       mainEvents.push({
         _id: uid(), _ts: Date.now(),
@@ -5042,14 +5096,14 @@
       if (dup) return;
       var rec = v2a_fetchRecord(l.record_type, l.record_id);
       var dateStr = (rec ? (rec['日期'] || rec['添加'] || rec['开始'] || rec['生成时间']) : null) || (l.created_at ? String(l.created_at).slice(0, 10) : todayStr());
-      var shortStage = rec ? v2_inferStage(rec) : 'Unknown';
+      var stage = resolveGrowthStage(l.record_type, rec, { action: 'add' });
       events.push({
         _id: uid(), _ts: Date.now(),
         '日期': String(dateStr).slice(0, 10),
         '来源表': l.record_type, '来源记录 ID': l.record_id, '主题 ID': mainTopicId,
         '主题角色': (l.topic_role === 'supporting' ? 'secondary' : 'primary'),
         '主题权重': 0.7,
-        '阶段': MAIN_STAGE_MAP[shortStage] || 'E1 Explore',
+        '阶段': stage,
         '分类来源': (l.relation_source === 'manual' ? 'user' : 'rule'),
         '置信度': (l.confidence != null ? l.confidence : 0.9),
         '已确认': true,
@@ -5232,6 +5286,8 @@
   }
   function obsEventIsRealized(e, rec) {
     var table = e['来源表'];
+    if (table === 'study_habits') return false;             // 习惯「本体」定义不计成长，只有打卡(study_checkins)计
+    if (rec && rec['计入成长'] === false) return false;      // 第六期：用户可关闭「计入成长」，关闭即不计贡献
     if (table === 'study_checkins' || table === 'study_notes' || table === 'weekly_reviews') return true;
     if (!rec) return ['E3 Synthesize','E5 Output','E6 Reuse'].indexOf(e['阶段']) >= 0;
     if (table === 'projects' || table === 'year_plan') return rec['状态'] === '已完成';
@@ -5251,7 +5307,8 @@
     media: 1.0,          // 书影音完成
     study_checkins: 0.5, // 习惯打卡
     weekly_reviews: 1.0, // 复盘
-    inbox: 1.0           // Inbox
+    inbox: 1.0,          // Inbox
+    study_habits: 0.0    // 习惯「本体」不计贡献（第六期：只有打卡计）
   };
   function obsContributionWeight(e, rec) {
     var table = e['来源表'];
@@ -7033,6 +7090,8 @@
     var advancedNames = ['状态','负责人','备注','任务','平台','章节','笔记','评分','封面','短评','年份','开始','完结','频次','时段','单位','目标/天','颜色','启用','关联计划','关联课程'];
     fields.forEach(function(f) {
       var v = (defaults && defaults[f.name] != null) ? defaults[f.name] : '';
+      // 第六期：「计入成长」默认勾选（计入），只有用户显式取消才为 false
+      if (f.type === 'checkbox' && f.name === '计入成长') v = (defaults && defaults[f.name] === false) ? false : true;
       var input;
       if (f.options) {
         input = '<select name="' + escapeHTML(f.name) + '">';
@@ -7055,6 +7114,10 @@
         var lv = '[]';
         try { lv = JSON.stringify(JSON.parse(v || '[]')); } catch(_) {}
         input = '<input type="hidden" name="' + escapeHTML(f.name) + '" value="' + escapeHTML(lv) + '" data-record-link-input>';
+      } else if (f.type === 'readonly') {
+        // 第六期：只读回显（如「习惯名」），不产生表单输入、不进入 props
+        var rv = (f.value != null) ? f.value : v;
+        input = '<div class="readonly-value" style="font-size:13px;color:var(--c-muted);padding:6px 0">' + escapeHTML(String(rv)) + '</div>';
       } else {
         input = '<input type="text" name="' + escapeHTML(f.name) + '" value="' + escapeHTML(String(v)) + '">';
       }
@@ -7669,6 +7732,15 @@
   }
 
   /* v2h: 通用记录编辑入口（dashboard 时间线/今日条目点击跳转用） */
+  // 第六期：习惯打卡记录只读回显「习惯名」（习惯 ID 不再可编辑，仅数据模型保留）
+  function resolveHabitName(table, hid) {
+    if (!hid) return '';
+    var src = (table === 'study_checkins') ? (storeState.tableRecords.study_habits || []) : (storeState.tableRecords.habits || []);
+    for (var i = 0; i < src.length; i++) {
+      if (src[i] && src[i]._id === hid) return src[i]['习惯名'] || src[i]['标题'] || '';
+    }
+    return '';
+  }
   function openRecordEditor(table, recordId) {
     var rec = (storeState.tableRecords[table] || []).find(function(r){ return r._id === recordId; });
     if (!rec) { toast('记录不存在或已删除', 'danger'); return; }
@@ -7678,6 +7750,10 @@
       var ov = (rowOverrides[table] || {})[f.name];
       return ov ? Object.assign({}, f, { rows: ov }) : Object.assign({}, f);
     });
+    // 打卡/日志编辑：只读回显习惯名，习惯 ID 由保存上下文自动写入
+    if (table === 'study_checkins' || table === 'habit_logs') {
+      fields.unshift({ name: '习惯', type: 'readonly', value: resolveHabitName(table, rec['习惯 ID']) || '(未关联习惯)' });
+    }
     openModal('编辑 · ' + (obsSourceLabel(table) || table), fields, function(props){
       return Store.updateRecord(table, recordId, props).then(function(){ renderAll(); });
     }, rec);
