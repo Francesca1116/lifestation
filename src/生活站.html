@@ -191,6 +191,7 @@
   .sidebar.collapsed .side-label,
   .sidebar.collapsed .side-section-label,
   .sidebar.collapsed .side-child,
+  .sidebar.collapsed .side-year-card,
   .sidebar.collapsed .side-year-meta { display: none; }
   .sidebar.collapsed .side-item { justify-content: center; }
   .sidebar-toggle {
@@ -981,7 +982,10 @@
     .sidebar .side-label,
     .sidebar .side-section-label,
     .sidebar .side-child,
-    .sidebar .side-year-meta { display: none !important; }
+    .sidebar .side-year-card,
+    .sidebar .side-year-meta,
+    .sidebar h2,
+    .sidebar #addYearPlan { display: none !important; }
     .sidebar .side-item { justify-content: center; padding: 8px 0; }
     .sidebar-toggle { right: 4px; top: 8px; width: 20px; height: 20px; font-size: 10px; }
     .app { display: flex; }
@@ -5350,11 +5354,12 @@
         item.recentRecords.push({date:date,table:table,recordId:e['来源记录 ID']||'',title:obsRecordTitle(table,rec),stage:e['阶段'],role:role});
       }
     });
-    return Object.keys(byId).map(function(id){
+    var __out = Object.keys(byId).map(function(id){
       var x=byId[id]; x.score=Math.round(x.score*10)/10; x.activeDays=Object.keys(x._days).length;
       x.recentRecords.sort(function(a,b){return (b.date||'').localeCompare(a.date||'');});
       delete x._recordKeys; delete x._days; return x;
     }).filter(function(x){return x.score>0;}).sort(function(a,b){return b.score-a.score;});
+    return __out;
   }
   function obsContributionModel() {
     var days=obsPeriodDays(), cur=aggregateTopicContributions(days,0), prev=aggregateTopicContributions(days,days), prevMap={};
@@ -7777,7 +7782,7 @@
 
   // 看板1 数据：领域投入与变化（复用贡献聚合，含环比）
   function v2h_domainOverview(days) {
-    try { return aggregateTopicContributions(days || 30, 0); } catch(e) { return []; }
+    try { return aggregateTopicContributions(days || 30, 0); } catch(e) { console.error('[v2h_domainOverview] agg err', e); return []; }
   }
 
   // 看板2 数据：知识转化（E1-E3 学到 → E4 应用 → E5/E6 产出，真实统计无造假）
@@ -8033,7 +8038,7 @@
     var $tl = document.getElementById('dashTimeline');
     if ($tl) {
       var tlItems = [];
-      try { tlItems = obsContributionTimeline(aggregateTopicContributions(30, 0)).slice(0, 8); } catch(e) { tlItems = []; }
+      try { tlItems = obsContributionTimeline(aggregateTopicContributions(30, 0)).slice(0, 8); } catch(e) { console.error('[dashTimeline] agg err', e); tlItems = []; }
       var tlSub = document.getElementById('dashTimelineSub');
       if (tlSub) tlSub.textContent = tlItems.length ? '近 30 天已完成 · 点击可编辑' : '';
       if (!tlItems.length) {
@@ -10333,8 +10338,11 @@
     }
     add('body_goals', {'指标':'体重', '目标值':54, '周期':'月', '开始':y+'-'+mo+'-01', '结束':y+'-'+mo+'-31'});
 
-    add('media', {'标题':'夜晚的潜水艇','类型':'书','状态':'已完结','评分':5,'年份':2020,'添加':y+'-01-15','完结':y+'-02-02','短评':'陈春成 · 想写小说的冲动'});
-    add('media', {'标题':'花样年华','类型':'影','状态':'已完结','评分':5,'年份':2000,'添加':y+'-02-14','完结':y+'-02-14','短评':'王家卫 · 反复看都不会倦'});
+    var mAdd = new Date(now); mAdd.setDate(now.getDate()-14);
+    var mEnd = new Date(now); mEnd.setDate(now.getDate()-6);
+    function dstr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+    add('media', {'标题':'夜晚的潜水艇','类型':'书','状态':'已完结','评分':5,'年份':2020,'添加':dstr(mAdd),'完结':dstr(mEnd),'短评':'陈春成 · 想写小说的冲动'});
+    add('media', {'标题':'花样年华','类型':'影','状态':'已完结','评分':5,'年份':2000,'添加':dstr(mAdd),'完结':dstr(mEnd),'短评':'王家卫 · 反复看都不会倦'});
 
     add('projects', {
       '项目名':'Q3 资料库生活站 v4',
@@ -10368,7 +10376,7 @@
       var yearStart=new Date(d.getFullYear(),0,1), dayOfYear=Math.floor((d-yearStart)/86400000)+1;
       var wk=Math.ceil((dayOfYear+yearStart.getDay())/7);
       return d.getFullYear()+'-W'+String(wk).padStart(2,'0');
-    })(), '完成项数':18, '打卡天数':5, '专注时长 h':12, '运动次数':3, '支出 CNY':1840, '高光':'完成 v4 主页面 + 左栏', '改进':'周一前清空 inbox', '生成时间':yesterday});
+    })(), '完成项数':18, '打卡天数':5, '专注时长 h':12, '运动次数':3, '支出 CNY':1840, '高光':'完成 v4 主页面 + 左栏', '改进':'周一前清空 inbox', '生成时间':ystr});
 
     // 学习任务 + 学习打卡 + 学习笔记
     add('study_tasks', {'日期':today, '标题':'雅思 真题 4 reading 1', '状态':'待办', '优先级':'P0', '关联计划':'雅思 7.0', '关联课程':'Coursera · Managing People', '备注':'60 分钟阅读 + 错题记录'});
@@ -10386,6 +10394,9 @@
     }
 
     add('study_notes', {'日期':y+'-08-25', '标题':'陈春成《夜晚的潜水艇》读后', '内容':'## 我最喜欢的一篇\n- 传彩笔：想象 = 写小说\n- 一个被遗忘的天才：所有"错过"都是有意义的\n\n## 启发\n- 写作就是把"无法言说"说出来', '标签':'读书/文学', '关联计划':'读完12本书', '关联课程':''});
+
+    // 配套生成主题系统数据（三看板 / 主题分析页依赖主题 + 贡献事件），让示例演示完整可见
+    try { seedTopics(); seedTopicEventsFromExisting(); } catch(e) { console.error('seed topics err', e); }
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
