@@ -4,13 +4,16 @@
 > 每一条完成的任务、习惯打卡与笔记，都会沉淀为可分析、可回溯的成长证据。
 
 ![license](https://img.shields.io/badge/license-MIT-blue)
-![tests](https://img.shields.io/badge/tests-13%20suites%20%C2%B7%20400%2B%20assertions-brightgreen)
-![deps](https://img.shields.io/badge/runtime-single%20file%20%C2%B7%20zero%20dependency-orange)
+![tests](https://img.shields.io/badge/tests-14%20suites%20%C2%B7%20489%20checks-brightgreen)
+![deps](https://img.shields.io/badge/runtime-single%20file%20%C2%B7%20zero%20build%20dependency-orange)
 
 **Live Demo · 在线演示**: <https://4e02747cedc7482d94dcddbc44e8af01.app.workbuddy.link/>
 
-*All data stays in your own browser's localStorage — the demo starts empty and private by design.
-数据仅保存在你自己的浏览器 localStorage 中，演示默认空白、天然私密。*
+*By default all data stays in your own browser's localStorage — the demo starts empty and
+private. Cloud sync is optional: only when you actively sign in are the supported tables
+(currently `topics`, in a phased rollout) uploaded. 默认情况下数据只保存在你本机浏览器的
+localStorage 中，演示空白、天然私密；只有当你主动登录云端同步时，支持范围内的数据
+（目前仅 `topics`，分阶段接入）才会被上传。*
 
 ![LifeStation dashboard — annual progress ring, cross-module today board, and insight panels](docs/assets/dashboard.jpg)
 
@@ -37,16 +40,18 @@ a checklist never could:
 
 ### 🏠 All-in-one workspace · 一体化工作台
 
-**EN** — 21 record tables across 4 groups: life (todos, calendar, habit check-ins with
-30-day heatmaps, fitness with 7-day moving average & BMI, multi-currency bookkeeping,
-books/movies/music), learning (course notes, daily study tasks, yearly goals, study
-check-ins, study notes), work (projects with inline task lists), and review (weekly
-reviews, Inbox). A cross-module "Today" board aggregates everything due right now —
-click any item to edit it in place.
+**EN** — 21 local tables: 18 business tables across 4 groups — life (todos, calendar,
+habit check-ins with 30-day heatmaps, fitness with 7-day moving average & BMI,
+multi-currency bookkeeping, books/movies/music), learning (course notes, daily study
+tasks, yearly goals, study check-ins, study notes), work (projects with inline task
+lists), and review (weekly reviews, Inbox) — plus 3 topic-analysis tables (`topics`,
+`topic_events`, `knowledge_links`). A cross-module "Today" board aggregates everything
+due right now — click any item to open its source record for editing.
 
-**中文** — 4 大群组 · 21 张数据表：生活（待办 / 日程 / 习惯打卡+30 天热力图 / 健身+7 日均线+BMI /
-多币种记账 / 书影音）、学习（课程笔记 / 每日学习任务 / 学习目标 / 学习打卡 / 学习复盘）、
-工作（项目任务+内嵌清单勾选）、复盘（每周复盘 / Inbox）。「今日待办」跨模块聚合所有当下该处理的事，点任意一条即可就地编辑。
+**中文** — 底层共 21 张本地数据表：18 张业务表覆盖生活（待办 / 日程 / 习惯打卡+30 天热力图 /
+健身+7 日均线+BMI / 多币种记账 / 书影音）、学习（课程笔记 / 每日学习任务 / 学习目标 / 学习打卡 / 学习复盘）、
+工作（项目任务+内嵌清单勾选）、复盘（每周复盘 / Inbox）；另有 3 张主题分析表（`topics`、`topic_events`、`knowledge_links`）。
+「今日待办」跨模块聚合所有当下该处理的事，点击条目即可直接打开来源记录进行编辑。
 
 | Learning · 学习 | Work · 工作 |
 |---|---|
@@ -54,8 +59,8 @@ click any item to edit it in place.
 
 ### 🌱 Topic growth system · 主题成长系统
 
-**EN** — Every finished record maps to **topics** you care about, with an explainable
-contribution model:
+**EN** — A finished record that is linked to a **topic** (and has growth-counting
+enabled) feeds an explainable contribution model:
 
 ```
 contribution = record-type weight × topic-role weight × stage weight
@@ -67,7 +72,8 @@ Any task/habit/note can reference existing plans, projects, or courses — child
 then *inherit* their parents' topics automatically. Auto-generated junk topics are
 quarantined behind an `_auto` flag and triaged in a dedicated review panel.
 
-**中文** — 每条已完成记录都会映射到你关注**主题**上，用可解释的公式计分（记录类型权重 × 主题角色权重 × 阶段权重）。
+**中文** — 完成记录在关联主题且启用「计入成长」后，才会进入可追溯的主题贡献统计，用可解释的公式计分
+（记录类型权重 × 主题角色权重 × 阶段权重）。习惯只计算实际打卡，不计习惯定义本身。
 E1–E6 六个阶段给「学习」以完整生命周期：探索 → 学习 → 综合 → 应用 → 产出 → 复用。
 任务/打卡/笔记可结构化关联到计划、项目、课程，子记录自动继承父级主题；
 标题不会自动变成主题——机器生成的候选主题会被 `_auto` 标记隔离，在专门的治理面板中人工裁决。
@@ -76,17 +82,18 @@ E1–E6 六个阶段给「学习」以完整生命周期：探索 → 学习 →
 
 **EN** — The dashboard opens with three evidence-first boards: **Domain Overview**
 (contribution per topic over 7/30/90 days with period-over-period change),
-**Knowledge Conversion** (the real pipeline *learned → applied → produced*, reporting
-how many domains actually converted — no vanity numbers), and **Evidence of Progress**
-(concrete output events linked to their projects). A dedicated Observatory page adds a
-12-week contribution histogram, a four-step growth path, and a relation explorer backed
-by actually shared records.
+**Knowledge Conversion** (a per-topic stage overview: which topics show learning,
+application, and output records this period — a co-occurrence signal, not a strict
+causal funnel), and **Output Records** (finished activities classified into the
+output/reuse stages, shown with their linked project when one exists). A dedicated
+Observatory page adds a 12-week contribution histogram, a four-step growth path, and a
+relation explorer backed by actually shared records.
 
 **中文** — 主页三大看板：**领域投入与变化**（7/30/90 天贡献分 + 环比）、**知识转化**
-（学到 → 应用 → 产出的真实转化漏斗，只报真实转化、不要虚荣指标）、**成果证据**
-（有明确产出的活动及其关联项目）。另有「主题发展」页：12 周贡献柱状图、四步成长路径、基于真实共同记录的关系探索。
+（按主题汇总本周期出现的学习 / 应用 / 产出记录，反映阶段共现、帮助发现哪些主题已从学习延伸到实践，而非严格因果转化链）、**产出记录**
+（集中展示被归入「产出 / 复用」阶段的已完成活动，存在结构化关联时显示所属项目）。另有「主题发展」页：12 周贡献柱状图、四步成长路径、基于真实共同记录的关系探索。
 
-![Insight boards — domain overview, knowledge conversion, evidence of progress](docs/assets/boards.jpg)
+![Insight boards — domain overview, knowledge conversion, output records](docs/assets/boards.jpg)
 
 ![Topic development — 12-week histogram, growth path, recent completions](docs/assets/analysis.jpg)
 
@@ -98,24 +105,29 @@ by actually shared records.
 Open the [live demo](https://4e02747cedc7482d94dcddbc44e8af01.app.workbuddy.link/),
 click **⋯ → 加载示例数据** to fill it with realistic sample data, and explore.
 
+> ⚠️ 加载示例数据会覆盖当前浏览器中已有的生活站数据；请在空白浏览器环境体验，或先执行导出备份。
+
 **Option 2 — Local single file（本地单文件）**
 Download [`src/生活站.html`](src/生活站.html) and double-click it. No install, no build,
 no server, no network — it works fully offline in Safari / Chrome / Firefox.
 On iPhone, open it in Safari and use *Share → Add to Home Screen* to run it like an app.
 
 **Your data（数据与备份）**
-Everything is stored in your browser's localStorage. Use **导出 / 导入** (top-right) to
-back up and restore as JSON. Nothing ever leaves your device unless you choose to.
+By default everything is stored in your browser's localStorage. Use **导出 / 导入**
+(top-right) to back up and restore as JSON. Nothing leaves your device unless you
+actively sign in to cloud sync (which currently covers only the `topics` table).
 
 ---
 
 ## Engineering · 工程特点
 
-- **One self-contained HTML file** — no build step, no framework, no runtime dependency;
-  Monet's public-domain paintings are inlined as compressed backgrounds (~1.2 MB total)
+- **One self-contained HTML file** — no build step, no framework, no runtime dependency
+  for the local app; Monet's public-domain paintings are inlined as compressed
+  backgrounds (~1.2 MB total). Optional cloud sync loads the Supabase client on demand,
+  and a few test suites use jsdom.
 - **Dual storage stack** — localStorage by default, with a silent-write sync layer
   designed for optional cloud backends
-- **13 test suites · 400+ assertions** — the app logic (aggregation, topic inheritance,
+- **14 test suites · 489 checks** — the app logic (aggregation, topic inheritance,
   migration, routing) is extracted from the HTML and regression-tested in Node `vm` +
   jsdom on every change; the single-file architecture doesn't mean "untestable"
 - **Real bugs found and fixed by the test harness** — a DST-transition timing bug in the
@@ -135,14 +147,14 @@ lifestation/
 │   └── 生活站.html             # the whole app, one file · 整个应用（单文件）
 ├── deploy/
 │   └── index.html             # deployed copy · 部署副本
-├── scripts/                   # 13 regression suites + screenshot tooling · 回归测试与截图脚本
+├── scripts/                   # 14 regression suites + screenshot tooling · 回归测试与截图脚本
 └── docs/                      # design docs & guides · 设计文档与使用指南
 ```
 
 ## Running tests · 运行测试
 
 ```bash
-node scripts/v2j_growth_stage_test.js      # each suite is standalone, zero dependencies
+node scripts/v2j_growth_stage_test.js      # most suites use only Node.js
 # jsdom-based suites additionally need: NODE_PATH=<path-to>/node_modules
 ```
 
